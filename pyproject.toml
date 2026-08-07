@@ -1,0 +1,41 @@
+[project]
+name = "modelling"
+version = "0.1.0"
+description = "Train and predict over a materialised dataset; model plugins, runs and checkpoints"
+requires-python = ">=3.13"
+dependencies = [
+    "labels",
+]
+
+# The baselines are the only thing here that needs an ML framework, and a
+# project bringing its own model needs none of them. Installed per media
+# type so a text job does not pull in a vision stack, or the other way round.
+[project.optional-dependencies]
+image = [
+    "Pillow>=10.0",
+    "timm>=1.0",
+    "torch>=2.0",
+    "torchvision>=0.15",
+]
+text = [
+    "torch>=2.0",
+    "transformers>=4.40",
+]
+all = [
+    "modelling[image,text]",
+]
+# Only the service layer materialises; the training core takes a directory
+# and a manifest, so it stays testable with neither a catalog nor a database.
+service = [
+    "catalog",
+    "fastapi>=0.100",
+    "uvicorn>=0.20",
+]
+
+[tool.uv.sources]
+labels = { workspace = true }
+catalog = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
