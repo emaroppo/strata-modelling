@@ -112,5 +112,25 @@ def _module_from_import(target: str, name: str):
         return importlib.import_module(target)
     except ImportError as exc:
         raise ModelError(
-            f"Model reference {name!r} names a module that will not import: {exc}"
+            f"Model reference {name!r} names a module that will not import: "
+            f"{exc}{_extra_hint(target)}"
         ) from exc
+
+
+def _extra_hint(module: str) -> str:
+    """Name the extra when a baseline's framework is what is missing.
+
+    The frameworks are optional dependencies, so the common failure here is
+    not a broken model but an install that never asked for one. Saying which
+    extra beats a ModuleNotFoundError from inside importlib.
+    """
+    from .baselines import EXTRAS
+
+    extra = EXTRAS.get(module)
+    if extra is None:
+        return ""
+    return (
+        f". That is a baseline, and it needs the '{extra}' extra — "
+        f"`uv sync --extra {extra}` in a checkout, or "
+        f'`uv pip install "strata-modelling[{extra}]"`'
+    )

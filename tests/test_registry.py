@@ -48,8 +48,14 @@ def test_a_model_bringing_a_missing_dependency_says_so(tmp_path):
 def test_a_bare_name_goes_to_the_registry():
     # No ':' means a short name, which is what a request carries once it
     # crosses a wire
-    with pytest.raises(ModelError, match="No model named 'multilabel'"):
-        resolve("multilabel")
+    assert resolve("multilabel").__name__ == "MultiLabelClassifier"
+
+
+def test_every_advertised_name_actually_resolves():
+    # An entry point can name a class that was renamed or removed, and
+    # nothing notices until someone asks for it
+    for name in available():
+        assert issubclass(resolve(name), Model)
 
 
 def test_an_unknown_short_name_explains_the_other_path():

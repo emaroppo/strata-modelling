@@ -36,6 +36,16 @@ service = [
     "uvicorn>=0.20",
 ]
 
+# Short names a request can carry, so a caller need not know an import path.
+# Read from what is installed, which is the only honest answer to "what can
+# this backend serve".
+[project.entry-points."strata.models"]
+multilabel = "strata.modelling.baselines.classifier:MultiLabelClassifier"
+multiclass = "strata.modelling.baselines.classifier:MulticlassClassifier"
+presence = "strata.modelling.baselines.classifier:PresenceClassifier"
+text = "strata.modelling.baselines.text_classifier:TextClassifier"
+text-span = "strata.modelling.baselines.text_classifier:TextSpanTagger"
+
 [tool.uv.sources]
 strata-labels = { workspace = true }
 strata-catalog = { workspace = true }
