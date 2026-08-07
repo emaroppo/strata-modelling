@@ -6,6 +6,7 @@ reads the same locally and remotely, and the failure mode where something
 works on a laptop and 400s against the GPU host cannot arise.
 """
 
+import inspect
 import json
 from pathlib import Path
 
@@ -38,7 +39,7 @@ def train(request: TrainRequest, store: RunStore) -> Run:
             f"set is '{schema.task}'"
         )
 
-    model: Model = model_cls(**request.params)
+    model: Model = _construct(model_cls, request.model, request.params)
     classes = list(schema.classes)
     parent = _warm_start(model, request, store, classes)
 
@@ -82,7 +83,7 @@ def predict(request: PredictRequest, store: RunStore) -> list[Prediction]:
     if run.checkpoint is None or not Path(run.checkpoint).exists():
         raise TrainingError(f"Run {run.id} has no checkpoint on disk")
 
-    model: Model = resolve(run.model)(**run.params)
+    model: Model = _construct(resolve(run.model), run.model, run.params)
     model.load(Path(run.checkpoint))
     outputs = model.predict(list(request.paths))
     return [
@@ -92,6 +93,27 @@ def predict(request: PredictRequest, store: RunStore) -> list[Prediction]:
 
 
 # ----------------------------------------------------------------------
+
+
+def _construct(model_cls: type[Model], name: str, params: dict) -> Model:
+    """Build the model, turning a bad parameter into something readable.
+
+    In process a wrong keyword is a TypeError from deep inside the
+    constructor. Over a wire it would be a 500 with a traceback, so it is
+    named here instead — one error, the same either side.
+    """
+    try:
+        return model_cls(**params)
+    except TypeError as exc:
+        accepted = [
+            p
+            for p in inspect.signature(model_cls).parameters
+            if p not in ("self", "args", "kwargs")
+        ]
+        raise TrainingError(
+            f"{name!r} will not accept these parameters: {exc}. "
+            f"It takes: {', '.join(accepted) or 'none'}."
+        ) from exc
 
 
 def _read_manifest(directory: Path) -> dict:

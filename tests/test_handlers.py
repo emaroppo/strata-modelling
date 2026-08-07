@@ -213,3 +213,21 @@ def test_predicting_without_a_checkpoint_is_an_error(store, dataset_dir):
 def test_an_unresolvable_model_is_an_error(store, dataset_dir):
     with pytest.raises(ModelError):
         train(TrainRequest(dataset_dir=dataset_dir(), model="nope.py:Missing"), store)
+
+
+def test_a_bad_parameter_names_itself(store, dataset_dir):
+    # In process this is a TypeError from inside the constructor; over a wire
+    # it would be a 500 with a traceback. One error, the same either side.
+    with pytest.raises(TrainingError, match="will not accept these parameters"):
+        train(
+            TrainRequest(dataset_dir=dataset_dir(), model=COUNTER, params={"nope": 1}),
+            store,
+        )
+
+
+def test_the_error_lists_what_the_model_does_take(store, dataset_dir):
+    with pytest.raises(TrainingError, match="It takes: bias"):
+        train(
+            TrainRequest(dataset_dir=dataset_dir(), model=COUNTER, params={"nope": 1}),
+            store,
+        )
