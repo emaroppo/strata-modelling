@@ -5,6 +5,7 @@ description = "Train and predict over a materialised dataset; model plugins, run
 requires-python = ">=3.13"
 dependencies = [
     "strata-labels",
+    "sqlalchemy>=2.0",
 ]
 
 # The baselines are the only thing here that needs an ML framework, and a
@@ -24,6 +25,9 @@ text = [
 all = [
     "strata-modelling[image,text]",
 ]
+# The conformance suite is importable by plugins so they can run the model
+# contract against their own model. It is the only thing here needing pytest.
+test = ["pytest>=8.0"]
 # Only the service layer materialises; the training core takes a directory
 # and a manifest, so it stays testable with neither a catalog nor a database.
 service = [

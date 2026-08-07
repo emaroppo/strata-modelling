@@ -26,5 +26,30 @@ Two properties this has to record that are easy to leave out:
 Predictions are returned, not written: persisting them is the caller's
 business, and doing it here would put the catalog back into the core.
 
-Empty until Phase 4 — see ``docs/roadmap.md``.
+The baselines still live in ``strata.labeller`` and move here at the
+cutover, because moving them earlier would break the tool that is in use
+while this is built.
 """
+
+from .handlers import TrainingError, predict, train
+from .model import Example, Model
+from .registry import ENTRY_POINT_GROUP, ModelError, available, resolve
+from .requests import Prediction, PredictRequest, Run, TrainRequest
+from .runs import RunStore
+
+__all__ = [
+    "ENTRY_POINT_GROUP",
+    "Example",
+    "Model",
+    "ModelError",
+    "PredictRequest",
+    "Prediction",
+    "Run",
+    "RunStore",
+    "TrainRequest",
+    "TrainingError",
+    "available",
+    "predict",
+    "resolve",
+    "train",
+]

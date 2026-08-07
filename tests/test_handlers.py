@@ -1,0 +1,215 @@
+"""Training and prediction through the handler both transports call."""
+
+import json
+
+import pytest
+from counting_model import COUNTER
+
+from strata.modelling import (
+    ModelError,
+    PredictRequest,
+    TrainingError,
+    TrainRequest,
+    predict,
+    train,
+)
+
+# ----------------------------------------------------------------------
+# Training
+# ----------------------------------------------------------------------
+
+
+def test_training_records_a_run(store, dataset_dir):
+    run = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
+    assert run.id > 0
+    assert store.get(run.id) == run
+
+
+def test_the_run_carries_its_lineage(store, dataset_dir):
+    run = train(TrainRequest(dataset_dir=dataset_dir(version=3), model=COUNTER), store)
+    # These three resolve back to the exact samples and annotations behind
+    # the checkpoint
+    assert (run.dataset, run.dataset_version, run.label_set) == ("d", 3, "presence")
+
+
+def test_the_run_records_the_class_list_as_trained(store, dataset_dir):
+    run = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
+    # The label set may gain classes later; this is what the checkpoint encodes
+    assert run.classes == ["cat", "dog"]
+
+
+def test_the_run_records_the_model_version(store, dataset_dir):
+    run = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
+    assert run.model_version == "1"
+
+
+def test_the_split_from_the_manifest_reaches_the_model(store, dataset_dir):
+    run = train(
+        TrainRequest(dataset_dir=dataset_dir(n_train=7, n_val=3), model=COUNTER), store
+    )
+    assert run.metrics["n_train"] == 7
+
+
+def test_skipped_samples_are_not_training_data(store, dataset_dir):
+    run = train(
+        TrainRequest(dataset_dir=dataset_dir(n_train=5, n_val=2, n_skipped=4), model=COUNTER),
+        store,
+    )
+    assert run.metrics["n_train"] == 5
+
+
+def test_params_reach_the_constructor(store, dataset_dir):
+    run = train(
+        TrainRequest(dataset_dir=dataset_dir(), model=COUNTER, params={"bias": 0.9}), store
+    )
+    assert run.metrics["accuracy"] == pytest.approx(0.9)
+    assert run.params == {"bias": 0.9}
+
+
+def test_a_checkpoint_is_written_and_recorded(store, dataset_dir):
+    run = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
+    assert run.checkpoint.exists()
+    assert store.get(run.id).checkpoint == run.checkpoint
+
+
+def test_a_missing_manifest_is_an_error(store, tmp_path):
+    with pytest.raises(TrainingError, match="No manifest.json"):
+        train(TrainRequest(dataset_dir=tmp_path, model=COUNTER), store)
+
+
+def test_a_dataset_with_no_training_samples_is_an_error(store, dataset_dir):
+    with pytest.raises(TrainingError, match="no training samples"):
+        train(TrainRequest(dataset_dir=dataset_dir(n_train=0, n_val=2), model=COUNTER), store)
+
+
+def test_a_model_for_another_task_is_refused(store, dataset_dir):
+    root = dataset_dir()
+    manifest = json.loads((root / "manifest.json").read_text())
+    manifest["label_schema"]["task"] = "classification"
+    (root / "counter.py").write_text(
+        (root / "counter.py").read_text().replace('task = "classification"', 'task = "span"')
+    )
+    with pytest.raises(TrainingError, match="handles 'span'"):
+        train(TrainRequest(dataset_dir=root, model=COUNTER), store)
+
+
+# ----------------------------------------------------------------------
+# Warm starting
+# ----------------------------------------------------------------------
+
+
+def test_a_warm_start_loads_the_parent_checkpoint(store, dataset_dir):
+    first = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
+    second = train(
+        TrainRequest(
+            dataset_dir=dataset_dir(version=2), model=COUNTER, parent_run_id=first.id
+        ),
+        store,
+    )
+    assert second.parent_run_id == first.id
+
+
+def test_the_chain_walks_back_to_the_cold_start(store, dataset_dir):
+    first = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
+    second = train(
+        TrainRequest(dataset_dir=dataset_dir(version=2), model=COUNTER, parent_run_id=first.id),
+        store,
+    )
+    third = train(
+        TrainRequest(dataset_dir=dataset_dir(version=3), model=COUNTER, parent_run_id=second.id),
+        store,
+    )
+    # Warm-started metrics only mean something against the run before them
+    assert [r.id for r in store.chain(third.id)] == [first.id, second.id, third.id]
+
+
+def test_a_cold_start_has_no_parent(store, dataset_dir):
+    run = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
+    assert run.parent_run_id is None
+
+
+def test_continuing_from_a_missing_run_is_an_error(store, dataset_dir):
+    with pytest.raises(TrainingError, match="No run with id 99"):
+        train(
+            TrainRequest(dataset_dir=dataset_dir(), model=COUNTER, parent_run_id=99), store
+        )
+
+
+def test_appending_a_class_still_warm_starts(store, dataset_dir):
+    first = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
+    grown = dataset_dir(version=2, classes=("cat", "dog", "bird"))
+    second = train(
+        TrainRequest(dataset_dir=grown, model=COUNTER, parent_run_id=first.id), store
+    )
+    assert second.classes == ["cat", "dog", "bird"]
+
+
+def test_reordering_classes_refuses_to_warm_start(store, dataset_dir):
+    first = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
+    reordered = dataset_dir(version=2, classes=("dog", "cat"))
+    # A checkpoint maps output neurons to the class list by position, so this
+    # corrupts silently rather than failing if it is allowed through
+    with pytest.raises(TrainingError, match="append-only"):
+        train(TrainRequest(dataset_dir=reordered, model=COUNTER, parent_run_id=first.id), store)
+
+
+def test_removing_a_class_refuses_to_warm_start(store, dataset_dir):
+    first = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
+    shrunk = dataset_dir(version=2, classes=("cat",))
+    with pytest.raises(TrainingError, match="append-only"):
+        train(TrainRequest(dataset_dir=shrunk, model=COUNTER, parent_run_id=first.id), store)
+
+
+def test_a_model_version_change_refuses_to_warm_start(store, dataset_dir):
+    first = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
+    bumped = dataset_dir(version=2)
+    (bumped / "counter.py").write_text(
+        (bumped / "counter.py").read_text().replace('version = "1"', 'version = "2"')
+    )
+    with pytest.raises(TrainingError, match="version 1"):
+        train(TrainRequest(dataset_dir=bumped, model=COUNTER, parent_run_id=first.id), store)
+
+
+# ----------------------------------------------------------------------
+# Prediction
+# ----------------------------------------------------------------------
+
+
+def test_prediction_returns_one_output_per_path(store, dataset_dir):
+    root = dataset_dir()
+    run = train(TrainRequest(dataset_dir=root, model=COUNTER), store)
+    paths = sorted((root / "files").glob("*.jpg"))[:4]
+    assert len(predict(PredictRequest(run_id=run.id, paths=paths), store)) == 4
+
+
+def test_predictions_keep_their_paths(store, dataset_dir):
+    root = dataset_dir()
+    run = train(TrainRequest(dataset_dir=root, model=COUNTER), store)
+    paths = sorted((root / "files").glob("*.jpg"))[:3]
+    assert [p.path for p in predict(PredictRequest(run_id=run.id, paths=paths), store)] == paths
+
+
+def test_prediction_restores_the_classes_from_the_checkpoint(store, dataset_dir):
+    root = dataset_dir()
+    run = train(TrainRequest(dataset_dir=root, model=COUNTER), store)
+    [first] = predict(
+        PredictRequest(run_id=run.id, paths=[sorted((root / "files").glob("*.jpg"))[0]]), store
+    )
+    assert first.value.values == ["cat"]
+
+
+def test_predicting_from_an_unknown_run_is_an_error(store):
+    with pytest.raises(TrainingError, match="No run with id 42"):
+        predict(PredictRequest(run_id=42, paths=[]), store)
+
+
+def test_predicting_without_a_checkpoint_is_an_error(store, dataset_dir):
+    run = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
+    run.checkpoint.unlink()
+    with pytest.raises(TrainingError, match="no checkpoint"):
+        predict(PredictRequest(run_id=run.id, paths=[]), store)
+
+
+def test_an_unresolvable_model_is_an_error(store, dataset_dir):
+    with pytest.raises(ModelError):
+        train(TrainRequest(dataset_dir=dataset_dir(), model="nope.py:Missing"), store)
