@@ -1,10 +1,10 @@
 [project]
-name = "modelling"
+name = "strata-modelling"
 version = "0.1.0"
 description = "Train and predict over a materialised dataset; model plugins, runs and checkpoints"
 requires-python = ">=3.13"
 dependencies = [
-    "labels",
+    "strata-labels",
 ]
 
 # The baselines are the only thing here that needs an ML framework, and a
@@ -22,20 +22,24 @@ text = [
     "transformers>=4.40",
 ]
 all = [
-    "modelling[image,text]",
+    "strata-modelling[image,text]",
 ]
 # Only the service layer materialises; the training core takes a directory
 # and a manifest, so it stays testable with neither a catalog nor a database.
 service = [
-    "catalog",
+    "strata-catalog",
     "fastapi>=0.100",
     "uvicorn>=0.20",
 ]
 
 [tool.uv.sources]
-labels = { workspace = true }
-catalog = { workspace = true }
+strata-labels = { workspace = true }
+strata-catalog = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# PEP 420 namespace: no strata/__init__.py in any package, or they stop merging
+packages = ["strata"]

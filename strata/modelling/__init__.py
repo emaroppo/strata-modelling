@@ -7,7 +7,7 @@ to the exact samples and annotations that produced it.
 **May import:** ``labels``, an ML framework behind the optional extras, and
 ``catalog`` *only* from the service layer.
 
-**May not import:** ``auto_labeller``, or Label Studio.
+**May not import:** ``strata.labeller``, or Label Studio.
 
 The training core takes a directory and a manifest — nothing else. The
 service layer materialises a dataset before invoking it, which keeps the
