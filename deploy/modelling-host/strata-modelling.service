@@ -1,0 +1,47 @@
+# Training on the machine with the GPU.
+#
+# A user unit: it runs as you, reads the CUDA setup you already have, and
+# needs no root. Install with
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/gpu/strata-modelling.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now strata-modelling
+#
+# and, so it survives you logging out:
+#
+#   sudo loginctl enable-linger $USER
+#
+# Without that last line systemd stops your user's services when the last
+# session closes — which is precisely when a round submitted from elsewhere
+# is running unattended.
+
+[Unit]
+Description=strata modelling service
+# Wants rather than Requires: the catalog is on another machine, so waiting
+# on the network being "up" locally proves nothing. The service retries per
+# request, and refuses to start only on missing configuration.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/git/tools/auto-labeller
+EnvironmentFile=/home/ubuntu/git/tools/auto-labeller/deploy/gpu/.env
+ExecStart=/home/ubuntu/.local/bin/uv run --extra image --extra service strata-modelling
+
+# A training round is minutes long and a restart mid-round loses it, so the
+# service is restarted on failure rather than kept alive at all costs.
+Restart=on-failure
+RestartSec=10
+
+# Long enough that a stop during a round is not a kill. Jobs live in memory
+# and do not survive a restart either way, but a finished round writes its
+# run before this expires.
+TimeoutStopSec=120
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
