@@ -36,6 +36,11 @@ service = [
     "uvicorn>=0.20",
 ]
 
+[project.scripts]
+# Only importable with the service extra; declared here so a host has a
+# command rather than a python -c.
+strata-modelling = "strata.modelling.service:main"
+
 # Short names a request can carry, so a caller need not know an import path.
 # Read from what is installed, which is the only honest answer to "what can
 # this backend serve".
