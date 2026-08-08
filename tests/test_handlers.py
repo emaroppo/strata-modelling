@@ -255,3 +255,52 @@ def test_a_declared_requirement_is_accepted(store, dataset_dir):
         )
     )
     assert train(TrainRequest(dataset_dir=root, model=COUNTER), store).id > 0
+
+
+def test_continuing_from_another_model_is_refused(store, dataset_dir):
+    first = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
+    other = dataset_dir(version=2)
+    (other / "counter.py").write_text(
+        (other / "counter.py").read_text().replace("class CountingModel", "class Other")
+    )
+    with pytest.raises(TrainingError, match="is not a warm start"):
+        train(
+            TrainRequest(
+                dataset_dir=other, model="counter.py:Other", parent_run_id=first.id
+            ),
+            store,
+        )
+
+
+def test_the_same_model_under_another_name_still_continues(store, dataset_dir):
+    # One class is recorded under whatever spelling the caller used, so
+    # comparing references rather than classes would refuse a rename
+    root = dataset_dir()
+    first = train(TrainRequest(dataset_dir=root, model=COUNTER), store)
+    absolute_ref = f"{root / 'counter.py'}:CountingModel"
+    second = train(
+        TrainRequest(
+            dataset_dir=dataset_dir(version=2), model=absolute_ref, parent_run_id=first.id
+        ),
+        store,
+    )
+    assert second.parent_run_id == first.id
+
+
+def test_an_unresolvable_parent_reference_does_not_block(store, dataset_dir):
+    # The ordinary state of a run imported from an older layout: refusing on
+    # it would make history unusable to say nothing about it
+    first = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
+    with store.engine.begin() as conn:
+        from strata.modelling import tables as t
+
+        conn.execute(
+            t.run.update().where(t.run.c.id == first.id).values(model="gone.away:Model")
+        )
+    second = train(
+        TrainRequest(
+            dataset_dir=dataset_dir(version=2), model=COUNTER, parent_run_id=first.id
+        ),
+        store,
+    )
+    assert second.parent_run_id == first.id

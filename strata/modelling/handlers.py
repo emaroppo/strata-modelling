@@ -156,6 +156,7 @@ def _warm_start(
     parent = store.get(request.parent_run_id)
     if parent is None:
         raise TrainingError(f"No run with id {request.parent_run_id} to continue from")
+    _refuse_a_different_model(parent, type(model))
     if parent.model_version != type(model).version:
         # Output neurons map to the class list by position, so a checkpoint
         # from a different version of the model is not merely stale — loading
@@ -175,6 +176,34 @@ def _warm_start(
     if parent.checkpoint and Path(parent.checkpoint).exists():
         model.load(Path(parent.checkpoint))
     return parent
+
+
+def _refuse_a_different_model(parent: Run, model_cls: type[Model]) -> None:
+    """Refuse to continue from a checkpoint another model wrote.
+
+Compared by class name rather than by reference or identity. The same
+    model is recorded under whatever spelling the caller used — a registered
+    short name, or an import path that has since moved — so three references
+    can name one class. Identity is too strict the other way: a model.py
+    copied beside each dataset is a fresh class object every time, and the
+    same model carried around is still the same model.
+
+    A reference that no longer resolves is left alone. That is the ordinary
+    state of a run imported from an older layout, and refusing on it would
+    make history unusable to say nothing about it.
+    """
+    try:
+        was = resolve(parent.model)
+    except ModelError:
+        return
+    if was.__name__ == model_cls.__name__:
+        return
+    raise TrainingError(
+        f"Run {parent.id} was trained by {was.__name__} and this is "
+        f"{model_cls.__name__}. A checkpoint is one model's weights in that "
+        f"model's layout; loading it into another is not a warm start. Train "
+        f"a fresh run instead."
+    )
 
 
 def _attach_checkpoint(store: RunStore, run: Run, checkpoint: Path) -> Run:
