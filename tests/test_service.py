@@ -5,6 +5,9 @@ handler the in-process path calls. So what is worth testing is the shell —
 what it refuses, and that the two paths agree.
 """
 
+import threading
+import time
+
 import pytest
 
 from strata.modelling.service import (
@@ -230,3 +233,77 @@ def test_a_file_reference_is_refused_before_anything_is_fetched(tmp_path, fixtur
     # Refusing after a transfer would waste the expensive part on a request
     # that was never going to work
     assert catalog.materialised == 0
+
+
+# ----------------------------------------------------------------------
+# Jobs
+# ----------------------------------------------------------------------
+
+
+def test_a_round_is_accepted_and_then_run():
+    from strata.modelling.service import Jobs
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def runner(request, progress):
+        started.set()
+        release.wait(2)
+        progress(4, 4)
+        return "done-ish"
+
+    jobs = Jobs(runner)
+    job = jobs.submit(RoundRequest(dataset_id=1, model="stub"))
+
+    # The point of submitting: this returned before the work did
+    assert started.wait(2)
+    assert jobs.get(job.id).state in ("queued", "running")
+
+    release.set()
+    for _ in range(100):
+        if jobs.get(job.id).finished:
+            break
+        time.sleep(0.02)
+    assert jobs.get(job.id).state == "done"
+    assert jobs.get(job.id).result == "done-ish"
+
+
+def test_a_second_round_is_refused_while_one_runs():
+    from strata.modelling.service import BusyError, Jobs
+
+    release = threading.Event()
+    jobs = Jobs(lambda request, progress: release.wait(2))
+    first = jobs.submit(RoundRequest(dataset_id=1, model="stub"))
+
+    # Two training jobs on one GPU do not run slower, they run out of memory
+    with pytest.raises(BusyError, match=first.id):
+        jobs.submit(RoundRequest(dataset_id=2, model="stub"))
+    release.set()
+
+
+def test_a_failed_round_keeps_its_reason():
+    from strata.modelling.service import Jobs
+
+    def explode(request, progress):
+        raise RuntimeError("CUDA out of memory")
+
+    jobs = Jobs(explode)
+    job = jobs.submit(RoundRequest(dataset_id=1, model="stub"))
+    for _ in range(100):
+        if jobs.get(job.id).finished:
+            break
+        time.sleep(0.02)
+
+    # The only thing a caller can act on, so it has to survive the thread
+    assert jobs.get(job.id).state == "failed"
+    assert "CUDA out of memory" in jobs.get(job.id).error
+
+
+def test_an_unservable_model_is_refused_at_submission():
+    from strata.modelling.service import Jobs
+
+    jobs = Jobs(lambda request, progress: None)
+    # Before a thread starts, so a caller learns immediately rather than by
+    # polling a job that was never going to run
+    with pytest.raises(ServiceError, match="entry point"):
+        jobs.submit(RoundRequest(dataset_id=1, model="model.py:Custom"))
