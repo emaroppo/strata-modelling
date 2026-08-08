@@ -231,3 +231,27 @@ def test_the_error_lists_what_the_model_does_take(store, dataset_dir):
             TrainRequest(dataset_dir=dataset_dir(), model=COUNTER, params={"nope": 1}),
             store,
         )
+
+
+def test_a_model_needing_an_undeclared_class_is_refused(store, dataset_dir):
+    # A model with an implicit negative predicts a token the label set never
+    # declared. That is legal here and rejected by whatever displays it —
+    # silently, and worst on exactly the samples worth reviewing.
+    root = dataset_dir()
+    (root / "counter.py").write_text(
+        (root / "counter.py").read_text().replace(
+            '    version = "1"', '    version = "1"\n    requires_classes = ("none",)'
+        )
+    )
+    with pytest.raises(TrainingError, match="does not declare"):
+        train(TrainRequest(dataset_dir=root, model=COUNTER), store)
+
+
+def test_a_declared_requirement_is_accepted(store, dataset_dir):
+    root = dataset_dir(classes=("cat", "none"))
+    (root / "counter.py").write_text(
+        (root / "counter.py").read_text().replace(
+            '    version = "1"', '    version = "1"\n    requires_classes = ("none",)'
+        )
+    )
+    assert train(TrainRequest(dataset_dir=root, model=COUNTER), store).id > 0

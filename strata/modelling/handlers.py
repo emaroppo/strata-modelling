@@ -39,6 +39,17 @@ def train(request: TrainRequest, store: RunStore) -> Run:
             f"set is '{schema.task}'"
         )
 
+    undeclared = [c for c in model_cls.requires_classes if c not in schema.classes]
+    if undeclared:
+        # This model emits a class of its own. Left undeclared, the
+        # prediction is legal here and rejected by whatever displays it —
+        # silently, and worst on exactly the samples worth reviewing.
+        raise TrainingError(
+            f"Model {request.model!r} predicts {', '.join(undeclared)}, which this "
+            f"label set does not declare (it has: {', '.join(schema.classes)}). "
+            f"Either declare it, or use a model without an implicit negative class."
+        )
+
     model: Model = _construct(model_cls, request.model, request.params)
     classes = list(schema.classes)
     parent = _warm_start(model, request, store, classes)

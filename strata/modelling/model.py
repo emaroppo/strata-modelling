@@ -35,6 +35,13 @@ class Model(ABC):
     #: after a queue wait.
     task: ClassVar[str] = "classification"
 
+    #: Classes this model emits that a caller would not otherwise declare.
+    #: A model with an implicit negative class predicts a token nothing else
+    #: knows about, and an annotation tool given one silently drops the
+    #: prediction — so the label set has to declare it, and training refuses
+    #: if it does not.
+    requires_classes: ClassVar[tuple[str, ...]] = ()
+
     #: Bumped when a change makes existing checkpoints unreadable. A run
     #: records it, and warm-starting from a checkpoint written by a
     #: different version is refused — output neurons map to the class list by

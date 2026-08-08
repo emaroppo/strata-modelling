@@ -549,6 +549,7 @@ class PresenceClassifier(MultiLabelClassifier):
     """
 
     NEGATIVE_LABEL = "none"
+    requires_classes = (NEGATIVE_LABEL,)
 
     def _effective_classes(self, classes: list[str]) -> list[str]:
         return [c for c in classes if c != self.NEGATIVE_LABEL]
