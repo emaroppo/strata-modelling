@@ -56,7 +56,8 @@ class Run(BaseModel):
     id: int
     parent_run_id: int | None = None
     dataset: str
-    dataset_version: int
+    #: None when nothing materialised describes this run's data.
+    dataset_version: int | None = None
     label_set: str
     model: str
     model_version: str

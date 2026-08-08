@@ -41,7 +41,12 @@ run = Table(
     # Lineage back into the catalog: these three resolve to the exact
     # samples and annotations behind the checkpoint.
     Column("dataset", String(255), nullable=False),
-    Column("dataset_version", Integer, nullable=False),
+    # Null when no dataset version describes what the run trained on, which
+    # is the state of anything imported from before the catalog existed. A
+    # round number is not a dataset version, and standing one in for the
+    # other made an imported round read as though it shared data with a
+    # catalog one that happened to carry the same number.
+    Column("dataset_version", Integer, nullable=True),
     Column("label_set", String(255), nullable=False),
     Column("model", String(255), nullable=False),
     # Bumped when a change makes old checkpoints unreadable. Recorded per
