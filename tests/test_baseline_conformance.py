@@ -63,6 +63,13 @@ class _BaselineContract(ModelContract):
         return instance
 
     @pytest.fixture
+    def fresh(self, model, monkeypatch):
+        # Pinned to CPU like the model under test: the stub backbone is built
+        # wherever the instance says, so a default-constructed one would land
+        # on the GPU and its weights on the CPU
+        return self.MODEL(num_epochs=1, batch_size=2, device="cpu")
+
+    @pytest.fixture
     def examples(self, tmp_path):
         made = []
         for i, labels in enumerate([["cat"], ["dog"], ["cat", "dog"], []]):

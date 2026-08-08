@@ -49,6 +49,17 @@ class ModelContract:
         )
 
     @pytest.fixture
+    def fresh(self, model) -> Model:
+        """An untrained model of the same kind, for restoring a checkpoint into.
+
+        Default-constructed, because that is what a caller loading a run does
+        — it has the reference and the recorded params, not the instance.
+        Override when a model needs constructor arguments to match the one
+        under test, such as pinning a device.
+        """
+        return type(model)()
+
+    @pytest.fixture
     def classes(self, examples) -> list[str]:
         seen: list[str] = []
         for example in examples:
@@ -117,7 +128,7 @@ class ModelContract:
         model.save(checkpoint)
         assert checkpoint.exists() and checkpoint.stat().st_size > 0
 
-    def test_a_checkpoint_round_trips(self, model, examples, classes, tmp_path):
+    def test_a_checkpoint_round_trips(self, model, fresh, examples, classes, tmp_path):
         model.finetune(examples, classes)
         paths = [e.path for e in examples]
         before = model.predict(paths)
@@ -125,19 +136,19 @@ class ModelContract:
         checkpoint = tmp_path / "checkpoint.pt"
         model.save(checkpoint)
 
-        restored = type(model)()
+        restored = fresh
         restored.load(checkpoint)
 
         # The whole point of a checkpoint: the same inputs give the same
         # answers, in a fresh process that never saw the training data
         assert [o.values for o in restored.predict(paths)] == [o.values for o in before]
 
-    def test_a_restored_model_keeps_its_classes(self, model, examples, classes, tmp_path):
+    def test_a_restored_model_keeps_its_classes(self, model, fresh, examples, classes, tmp_path):
         model.finetune(examples, classes)
         checkpoint = tmp_path / "checkpoint.pt"
         model.save(checkpoint)
 
-        restored = type(model)()
+        restored = fresh
         restored.load(checkpoint)
         for output in restored.predict([e.path for e in examples]):
             assert set(output.values) <= set(classes)
