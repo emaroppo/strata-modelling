@@ -14,7 +14,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from rich.console import Console
+from rich import get_console
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -34,7 +34,12 @@ from strata.labels import ChoicesPrediction, Span, SpansPrediction
 
 from ..model import Example, Model
 
-console = Console()
+#: The console rich itself hands out, not one of our own. Two Console
+#: objects writing to one terminal cannot coordinate: a live display owned
+#: by one knows nothing about text printed through the other, and the two
+#: fight over the same lines — which is what made a progress bar flicker
+#: against a model's own output.
+console = get_console()
 
 DEFAULT_ENCODER = "distilbert-base-uncased"
 

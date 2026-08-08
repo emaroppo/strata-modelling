@@ -6,7 +6,7 @@ import timm
 import torch
 import torch.nn as nn
 from PIL import Image, ImageFile
-from rich.console import Console
+from rich import get_console
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -42,7 +42,12 @@ def _load_rgb(path: str | Path, draft_size: int | None = None) -> Image.Image:
         return Image.new("RGB", (256, 256))
 
 
-console = Console()
+#: The console rich itself hands out, not one of our own. Two Console
+#: objects writing to one terminal cannot coordinate: a live display owned
+#: by one knows nothing about text printed through the other, and the two
+#: fight over the same lines — which is what made a progress bar flicker
+#: against a model's own output.
+console = get_console()
 
 
 class _ImageDataset(Dataset):
