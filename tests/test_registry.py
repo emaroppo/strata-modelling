@@ -72,3 +72,26 @@ def test_available_reads_what_is_installed():
 def test_the_entry_point_group_is_stable():
     # Changing it silently unregisters every plugin already published
     assert ENTRY_POINT_GROUP == "strata.models"
+
+
+def test_resolving_the_same_file_twice_gives_the_same_class(tmp_path):
+    # Without this a model cannot be compared to itself, which is what
+    # checking a warm start against its parent needs
+    (tmp_path / "mine.py").write_text(COUNTING_MODEL)
+    assert resolve("mine.py:CountingModel", root=tmp_path) is resolve(
+        "mine.py:CountingModel", root=tmp_path
+    )
+
+
+def test_two_projects_with_the_same_filename_do_not_collide(tmp_path):
+    # Both carry a model.py; naming the modules after the stem made one
+    # silently shadow the other
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "model.py").write_text(
+            COUNTING_MODEL.replace("class CountingModel", f"class Model{name.upper()}")
+        )
+    first = resolve("model.py:ModelA", root=tmp_path / "a")
+    second = resolve("model.py:ModelB", root=tmp_path / "b")
+    assert first is not second
+    assert (first.__name__, second.__name__) == ("ModelA", "ModelB")

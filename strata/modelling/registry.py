@@ -8,6 +8,7 @@ containing ``:`` is a direct reference, which keeps the quick-experiment
 path: drop a ``model.py`` beside your work and point at it.
 """
 
+import hashlib
 import importlib
 import importlib.util
 import sys
@@ -90,7 +91,17 @@ def _module_from_file(target: str, root: Path | None):
         path = Path(root) / path
     if not path.exists():
         raise ModelError(f"Model reference points at a missing file: {path}")
-    module_name = f"strata_modelling_local_{path.stem}"
+
+    # Keyed on the whole path, not the stem: two projects each carrying a
+    # model.py are two models, and naming them alike made one silently shadow
+    # the other. Returned from the cache when already loaded, so resolving
+    # the same file twice yields the same class — without which a model
+    # cannot even be compared to itself.
+    digest = hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:12]
+    module_name = f"strata_modelling_local_{path.stem}_{digest}"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise ModelError(f"Could not load a model from {path}")
