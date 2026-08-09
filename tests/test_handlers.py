@@ -21,7 +21,7 @@ from strata.modelling import (
 
 def test_training_records_a_run(store, dataset_dir):
     run = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
-    assert run.id > 0
+    assert run.id
     assert store.get(run.id) == run
 
 
@@ -131,7 +131,7 @@ def test_a_cold_start_has_no_parent(store, dataset_dir):
 def test_continuing_from_a_missing_run_is_an_error(store, dataset_dir):
     with pytest.raises(TrainingError, match="No run with id 99"):
         train(
-            TrainRequest(dataset_dir=dataset_dir(), model=COUNTER, parent_run_id=99), store
+            TrainRequest(dataset_dir=dataset_dir(), model=COUNTER, parent_run_id="99"), store
         )
 
 
@@ -200,7 +200,7 @@ def test_prediction_restores_the_classes_from_the_checkpoint(store, dataset_dir)
 
 def test_predicting_from_an_unknown_run_is_an_error(store):
     with pytest.raises(TrainingError, match="No run with id 42"):
-        predict(PredictRequest(run_id=42, paths=[]), store)
+        predict(PredictRequest(run_id="42", paths=[]), store)
 
 
 def test_predicting_without_a_checkpoint_is_an_error(store, dataset_dir):
@@ -254,7 +254,7 @@ def test_a_declared_requirement_is_accepted(store, dataset_dir):
             '    version = "1"', '    version = "1"\n    requires_classes = ("none",)'
         )
     )
-    assert train(TrainRequest(dataset_dir=root, model=COUNTER), store).id > 0
+    assert train(TrainRequest(dataset_dir=root, model=COUNTER), store).id
 
 
 def test_continuing_from_another_model_is_refused(store, dataset_dir):

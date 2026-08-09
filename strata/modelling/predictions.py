@@ -68,7 +68,7 @@ class PredictionCache:
         """The cache belonging to a run store."""
         return cls(store.engine)
 
-    def get(self, run_id: int, checksums: list[str]) -> dict[str, Prediction]:
+    def get(self, run_id: str, checksums: list[str]) -> dict[str, Prediction]:
         """Whatever of ``checksums`` this run has already answered."""
         found: dict[str, Prediction] = {}
         if not checksums:
@@ -85,7 +85,7 @@ class PredictionCache:
                     found[row.checksum] = _PREDICTION.validate_json(row.value)
         return found
 
-    def put(self, run_id: int, made: dict[str, Prediction]) -> int:
+    def put(self, run_id: str, made: dict[str, Prediction]) -> int:
         """Record what a run said. Rewriting an entry is a no-op by construction."""
         if not made:
             return 0
@@ -123,12 +123,12 @@ class PredictionCache:
                 )
         return len(rows)
 
-    def forget(self, run_id: int) -> None:
+    def forget(self, run_id: str) -> None:
         """Drop a run's predictions, for when disk matters more than time."""
         with self.engine.begin() as conn:
             conn.execute(delete(t.prediction).where(t.prediction.c.run_id == run_id))
 
-    def counts(self) -> dict[int, int]:
+    def counts(self) -> dict[str, int]:
         """How many predictions are held per run."""
         with self.engine.connect() as conn:
             return {

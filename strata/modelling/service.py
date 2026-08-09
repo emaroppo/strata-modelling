@@ -86,7 +86,7 @@ class PredictionRequest(BaseModel):
     the bucket and a cache, so it can turn content into files itself.
     """
 
-    run_id: int
+    run_id: str
     checksums: list[str] = Field(default_factory=list)
 
 
@@ -473,7 +473,7 @@ def build():
         return {"run": run.model_dump(mode="json"), "metrics": _metrics_of(store, run.id)}
 
     @app.get("/runs/{run_id}", dependencies=[Depends(authorise)])
-    def get_run(run_id: int) -> dict:
+    def get_run(run_id: str) -> dict:
         run = store.get(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail=f"No run {run_id}")

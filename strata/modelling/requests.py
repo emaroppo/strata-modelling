@@ -30,14 +30,14 @@ class TrainRequest(BaseModel):
     #: Continue from this run's checkpoint. The default, warm-starting from
     #: the newest run over the same dataset, is the caller's policy to apply
     #: rather than a default hidden in here.
-    parent_run_id: int | None = None
+    parent_run_id: str | None = None
 
 
 class PredictRequest(BaseModel):
     """Everything needed to run inference."""
 
     #: Which run's checkpoint to use.
-    run_id: int
+    run_id: str
     #: Absolute paths. Predicting over samples that are not in any dataset
     #: is the normal case — that is what the unlabelled pool is.
     paths: list[Path] = Field(default_factory=list)
@@ -59,8 +59,21 @@ class ScoredPath(BaseModel):
 class Run(BaseModel):
     """A training job that happened."""
 
-    id: int
-    parent_run_id: int | None = None
+    id: str
+    parent_run_id: str | None = None
+    #: Which machine trained this, for when two stores are merged.
+    origin: str | None = None
+
+    @property
+    def short(self) -> str:
+        """The id without its microseconds, for showing a person.
+
+        Full ids are what everything keys on and what a merge needs; a
+        report full of thirty-character strings is unreadable, and the
+        microseconds are the part nobody is reading.
+        """
+        stamp, _, host = self.id.partition("-")
+        return f"{stamp[:15]}-{host}" if host else self.id
     dataset: str
     #: None when nothing materialised describes this run's data.
     dataset_version: int | None = None

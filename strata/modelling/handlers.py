@@ -65,7 +65,8 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
 
     run = store.record(
         Run(
-            id=0,
+            # Minted by the store, where the run happened
+            id="",
             parent_run_id=parent.id if parent else None,
             dataset=manifest["dataset"],
             dataset_version=manifest["version"],

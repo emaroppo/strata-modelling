@@ -39,10 +39,18 @@ metadata = MetaData()
 run = Table(
     "run",
     metadata,
-    Column("id", Integer, primary_key=True),
+    # A timestamp and a random suffix, minted where the run happened. An
+    # autoincrementing integer means something only inside one store, and
+    # there are two: a project keeps runs beside its own checkpoints and a
+    # modelling host keeps its own. Both numbered from one, so the same
+    # number named different models and nothing said so.
+    Column("id", String(40), primary_key=True),
     # What this run continued from. Null for a cold start, which is the only
     # run whose numbers stand entirely on their own.
     Column("parent_run_id", ForeignKey("run.id"), nullable=True),
+    # Which machine trained it. Provenance is a column rather than part of
+    # the id: an id is immutable and a machine can be renamed or handed on.
+    Column("origin", String(64), nullable=True),
     # Lineage back into the catalog: these three resolve to the exact
     # samples and annotations behind the checkpoint.
     Column("dataset", String(255), nullable=False),
@@ -94,7 +102,7 @@ metric = Table(
 prediction = Table(
     "prediction",
     metadata,
-    Column("run_id", ForeignKey("run.id", ondelete="CASCADE"), primary_key=True),
+    Column("run_id", String(40), primary_key=True),
     Column("checksum", String(64), primary_key=True),
     # The value as the model produced it, stored whole rather than split
     # into columns: what a prediction looks like is the label schema's

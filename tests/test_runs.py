@@ -7,7 +7,7 @@ from strata.modelling import Run, RunStore
 
 def a_run(**overrides) -> Run:
     base = dict(
-        id=0,
+        id="",
         dataset="d",
         dataset_version=1,
         label_set="presence",

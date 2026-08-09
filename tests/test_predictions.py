@@ -25,8 +25,8 @@ def guess(*values, confidences=None):
 
 
 def test_what_went_in_comes_back(cache):
-    cache.put(7, {"a" * 64: guess("cat"), "b" * 64: guess("dog", "cat")})
-    got = cache.get(7, ["a" * 64, "b" * 64])
+    cache.put("7", {"a" * 64: guess("cat"), "b" * 64: guess("dog", "cat")})
+    got = cache.get("7", ["a" * 64, "b" * 64])
 
     assert got["a" * 64].values == ["cat"]
     assert got["b" * 64].values == ["dog", "cat"]
@@ -36,25 +36,25 @@ def test_what_went_in_comes_back(cache):
 
 
 def test_a_miss_is_simply_absent(cache):
-    cache.put(7, {"a" * 64: guess("cat")})
-    got = cache.get(7, ["a" * 64, "c" * 64])
+    cache.put("7", {"a" * 64: guess("cat")})
+    got = cache.get("7", ["a" * 64, "c" * 64])
     # The caller predicts the difference, so a miss must not be an error or
     # a placeholder that ranks like a real score
     assert set(got) == {"a" * 64}
 
 
 def test_runs_do_not_share_predictions(cache):
-    cache.put(7, {"a" * 64: guess("cat")})
-    assert cache.get(8, ["a" * 64]) == {}
+    cache.put("7", {"a" * 64: guess("cat")})
+    assert cache.get("8", ["a" * 64]) == {}
 
 
 def test_writing_the_same_answer_again_is_harmless(cache):
-    cache.put(7, {"a" * 64: guess("cat")})
-    cache.put(7, {"a" * 64: guess("cat")})
+    cache.put("7", {"a" * 64: guess("cat")})
+    cache.put("7", {"a" * 64: guess("cat")})
     # A checkpoint and some bytes give one answer, so a re-run repeating
     # work must not fail on it
-    assert cache.get(7, ["a" * 64])["a" * 64].values == ["cat"]
-    assert cache.counts() == {7: 1}
+    assert cache.get("7", ["a" * 64])["a" * 64].values == ["cat"]
+    assert cache.counts() == {"7": 1}
 
 
 def test_a_pool_larger_than_sqlite_will_bind_still_works(cache):
@@ -62,16 +62,16 @@ def test_a_pool_larger_than_sqlite_will_bind_still_works(cache):
     # statement well below that, so this is the ordinary case rather than
     # an edge one
     many = {f"{i:064x}": guess("cat") for i in range(1500)}
-    cache.put(7, many)
-    got = cache.get(7, list(many))
+    cache.put("7", many)
+    got = cache.get("7", list(many))
     assert len(got) == 1500
 
 
 def test_forgetting_a_run_leaves_the_others(cache):
-    cache.put(7, {"a" * 64: guess("cat")})
-    cache.put(8, {"a" * 64: guess("dog")})
-    cache.forget(7)
-    assert cache.counts() == {8: 1}
+    cache.put("7", {"a" * 64: guess("cat")})
+    cache.put("8", {"a" * 64: guess("dog")})
+    cache.forget("7")
+    assert cache.counts() == {"8": 1}
 
 
 def test_a_cache_survives_being_reopened(tmp_path):
@@ -90,8 +90,8 @@ def test_what_comes_back_is_what_went_in(cache):
     sorts on them.
     """
     original = guess("cat", "dog", confidences=[0.7, 0.2])
-    cache.put(9, {"a" * 64: original})
-    assert cache.get(9, ["a" * 64])["a" * 64] == original
+    cache.put("9", {"a" * 64: original})
+    assert cache.get("9", ["a" * 64])["a" * 64] == original
 
 
 def test_a_wrapped_prediction_is_refused(cache):
@@ -109,7 +109,7 @@ def test_a_wrapped_prediction_is_refused(cache):
 
     wrapped = ScoredPath(path=Path("/x.jpg"), value=guess("cat"))
     with pytest.raises(TypeError, match="model output"):
-        cache.put(1, {"a" * 64: wrapped})
+        cache.put("1", {"a" * 64: wrapped})
 
 
 def test_it_holds_whatever_a_model_produced(cache):
@@ -129,9 +129,9 @@ def test_it_holds_whatever_a_model_produced(cache):
     spans = SpansPrediction(
         values=[Span(label="name", start=0, end=4)], confidences=[0.7]
     )
-    cache.put(3, {"a" * 64: boxes, "b" * 64: spans})
+    cache.put("3", {"a" * 64: boxes, "b" * 64: spans})
 
-    back = cache.get(3, ["a" * 64, "b" * 64])
+    back = cache.get("3", ["a" * 64, "b" * 64])
     assert back["a" * 64] == boxes
     assert back["b" * 64] == spans
     # The confidences are what a ranking sorts on; losing them silently
@@ -148,4 +148,4 @@ def test_a_plain_value_is_refused_too(cache):
     from strata.labels import Choices
 
     with pytest.raises(TypeError, match="model output"):
-        cache.put(1, {"a" * 64: Choices(values=["cat"])})
+        cache.put("1", {"a" * 64: Choices(values=["cat"])})

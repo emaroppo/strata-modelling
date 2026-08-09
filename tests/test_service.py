@@ -128,7 +128,7 @@ def stub_training(monkeypatch):
         seen["request"] = request
         return store.record(
             Run(
-                id=0,
+                id="",
                 parent_run_id=request.parent_run_id,
                 dataset="d",
                 dataset_version=2,
@@ -407,7 +407,7 @@ def test_scoring_is_keyed_by_content(tmp_path, stub_predict):
     catalog = FakeCache(known)
 
     result = run_prediction(
-        PredictionRequest(run_id=1, checksums=list(known)),
+        PredictionRequest(run_id="1", checksums=list(known)),
         catalog,
         RunStore.local(tmp_path / "runs"),
         tmp_path / "cache",
@@ -425,7 +425,7 @@ def test_a_sample_the_host_does_not_know_is_reported(tmp_path, stub_predict):
 
     catalog = FakeCache({"a" * 64: tmp_path / "a.jpg"})
     result = run_prediction(
-        PredictionRequest(run_id=1, checksums=["a" * 64, "c" * 64]),
+        PredictionRequest(run_id="1", checksums=["a" * 64, "c" * 64]),
         catalog,
         RunStore.local(tmp_path / "runs"),
         tmp_path / "cache",
@@ -440,7 +440,7 @@ def test_scoring_says_what_it_is_doing(tmp_path, stub_predict):
 
     stages = []
     run_prediction(
-        PredictionRequest(run_id=1, checksums=["a" * 64]),
+        PredictionRequest(run_id="1", checksums=["a" * 64]),
         FakeCache({"a" * 64: tmp_path / "a.jpg"}),
         RunStore.local(tmp_path / "runs"),
         tmp_path / "cache",

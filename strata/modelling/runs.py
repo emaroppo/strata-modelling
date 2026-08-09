@@ -1,5 +1,7 @@
 """The model catalog: recording runs, and reading their history back."""
 
+import socket
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import create_engine, delete, insert, select
@@ -7,6 +9,56 @@ from sqlalchemy.engine import Engine
 
 from . import tables as t
 from .requests import Run
+
+
+def host_token(name: str | None = None) -> str:
+    """A hostname reduced to something safe to put in an identifier."""
+    raw = (name or socket.gethostname()).split(".")[0].lower()
+    cleaned = "".join(c if c.isalnum() else "-" for c in raw).strip("-")
+    return cleaned[:16] or "unknown"
+
+
+def new_run_id(origin: str | None = None) -> str:
+    """A run id: when it happened, and where.
+
+    Unique without coordination, which is what lets a laptop train offline
+    and fold its history into the main store afterwards. Two machines cannot
+    collide because the host differs; one machine cannot collide with itself
+    because the timestamp carries microseconds and training takes minutes.
+
+    Legible on purpose. A random suffix would be unique too, and would say
+    nothing — while the two facts worth knowing about a run you are looking
+    at months later are when it happened and which machine did it.
+    """
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
+    return f"{stamp}-{host_token(origin)}"
+
+
+def _refuse_a_store_from_before_string_ids(engine, path: Path) -> None:
+    """Say what is wrong, rather than failing on a missing column later.
+
+    Run ids used to autoincrement, which meant something only inside one
+    store — and there were two, both numbering from one. There is no
+    migration: an id minted here and an integer from before it sort against
+    each other by their first digit, so mixing them is worse than starting
+    a store whose history is all of one kind.
+    """
+    from sqlalchemy import inspect
+
+    if "run" not in inspect(engine).get_table_names():
+        return
+    columns = {c["name"] for c in inspect(engine).get_columns("run")}
+    if "origin" in columns:
+        return
+    raise RunStoreError(
+        f"{path} predates run ids carrying when and where they were made. "
+        f"Move it aside and a new one will be created:\n"
+        f"  mv {path} {path}.archived"
+    )
+
+
+class RunStoreError(Exception):
+    """A run store that cannot be used as it stands."""
 
 
 class RunStore:
@@ -21,21 +73,32 @@ class RunStore:
     def local(cls, root: Path) -> "RunStore":
         root = Path(root)
         root.mkdir(parents=True, exist_ok=True)
-        engine = create_engine(f"sqlite:///{root / 'runs.db'}")
-        store = cls(engine, root / "checkpoints")
+        path = root / "runs.db"
+        engine = create_engine(f"sqlite:///{path}")
         t.metadata.create_all(engine)
-        return store
+        _refuse_a_store_from_before_string_ids(engine, path)
+        return cls(engine, root / "checkpoints")
 
-    def checkpoint_path(self, run_id: int) -> Path:
-        return self.checkpoints / f"run_{run_id:04d}.pt"
+    def checkpoint_path(self, run_id: str) -> Path:
+        # Ids are timestamps and hex, so they are already filename-safe
+        return self.checkpoints / f"run_{run_id}.pt"
 
     # ------------------------------------------------------------------
 
     def record(self, run: Run, metrics: dict[str, float]) -> Run:
-        """Write a completed run and its final metrics."""
+        """Write a completed run and its final metrics.
+
+        The id is minted here, where the run happened, and is unique without
+        asking anyone — which is what lets a laptop train offline and fold
+        its history into the main store later.
+        """
+        origin = run.origin or socket.gethostname()
+        run_id = run.id or new_run_id(origin)
         with self.engine.begin() as conn:
-            run_id = conn.execute(
+            conn.execute(
                 insert(t.run).values(
+                    id=run_id,
+                    origin=origin,
                     parent_run_id=run.parent_run_id,
                     dataset=run.dataset,
                     dataset_version=run.dataset_version,
@@ -46,11 +109,13 @@ class RunStore:
                     classes=run.classes,
                     checkpoint=str(run.checkpoint) if run.checkpoint else None,
                 )
-            ).inserted_primary_key[0]
+            )
             self._write_metrics(conn, run_id, metrics)
-        return run.model_copy(update={"id": run_id, "metrics": metrics})
+        return run.model_copy(
+            update={"id": run_id, "origin": origin, "metrics": metrics}
+        )
 
-    def _write_metrics(self, conn, run_id: int, metrics: dict[str, float], epoch=None) -> None:
+    def _write_metrics(self, conn, run_id: str, metrics: dict[str, float], epoch=None) -> None:
         for name, value in metrics.items():
             conn.execute(
                 insert(t.metric).values(
@@ -58,7 +123,7 @@ class RunStore:
                 )
             )
 
-    def get(self, run_id: int) -> Run | None:
+    def get(self, run_id: str) -> Run | None:
         with self.engine.connect() as conn:
             row = conn.execute(select(t.run).where(t.run.c.id == run_id)).first()
             if row is None:
@@ -71,8 +136,11 @@ class RunStore:
                 ).all()
             )
         return Run(
-            id=row.id,
-            parent_run_id=row.parent_run_id,
+            # Coerced, because a store written before ids were strings holds
+            # integers and SQLite hands them back as it stored them
+            id=str(row.id),
+            parent_run_id=None if row.parent_run_id is None else str(row.parent_run_id),
+            origin=row.origin,
             dataset=row.dataset,
             dataset_version=row.dataset_version,
             label_set=row.label_set,
@@ -90,12 +158,15 @@ class RunStore:
             run_id = conn.execute(
                 select(t.run.c.id)
                 .where(t.run.c.dataset == dataset)
-                .order_by(t.run.c.id.desc())
+                # By time, not by id. Ids are minted where a run happens and
+                # sort by their timestamp, but a store holding both those and
+                # older numeric ones would order them by their first digit.
+                .order_by(t.run.c.created_at.desc(), t.run.c.id.desc())
                 .limit(1)
             ).scalar_one_or_none()
         return self.get(run_id) if run_id is not None else None
 
-    def history(self, dataset: str, metric: str) -> list[tuple[int, int, float]]:
+    def history(self, dataset: str, metric: str) -> list[tuple[str, int, float]]:
         """``(run id, dataset version, value)`` for one metric, oldest first.
 
         The question a training history exists to answer, and the reason
@@ -113,18 +184,21 @@ class RunStore:
                         & (t.metric.c.name == metric)
                         & (t.metric.c.epoch.is_(None))
                     )
-                    .order_by(t.run.c.id)
+                    # Oldest first, by when rather than by id — the same
+                    # reason latest does: a store can hold ids minted
+                    # elsewhere, and their order is their timestamps'
+                    .order_by(t.run.c.created_at, t.run.c.id)
                 ).all()
             ]
 
-    def chain(self, run_id: int) -> list[Run]:
+    def chain(self, run_id: str) -> list[Run]:
         """A run and everything it continued from, oldest first.
 
         Warm-started metrics only mean something against the run before
         them, so the edge has to be walkable.
         """
         walked: list[Run] = []
-        seen: set[int] = set()
+        seen: set[str] = set()
         current = self.get(run_id)
         while current is not None and current.id not in seen:
             seen.add(current.id)
