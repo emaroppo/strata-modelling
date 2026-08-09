@@ -63,6 +63,9 @@ class Run(BaseModel):
     parent_run_id: str | None = None
     #: Which machine trained this, for when two stores are merged.
     origin: str | None = None
+    #: Which catalog the dataset belongs to. Null for a run recorded before
+    #: catalogs had identities.
+    catalog_id: str | None = None
 
     @property
     def short(self) -> str:

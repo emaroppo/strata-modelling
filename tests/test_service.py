@@ -61,7 +61,8 @@ def test_the_refusal_lists_what_this_host_has():
 class FakeCatalog:
     """A catalog that knows one dataset and writes it out on request."""
 
-    def __init__(self, name, version, write):
+    def __init__(self, name, version, write, id="20260101T000000-aaaaaaaa"):
+        self.id = id
         self.name = name
         self.version = version
         self._write = write

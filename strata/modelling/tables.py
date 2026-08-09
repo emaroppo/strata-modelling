@@ -51,6 +51,10 @@ run = Table(
     # Which machine trained it. Provenance is a column rather than part of
     # the id: an id is immutable and a machine can be renamed or handed on.
     Column("origin", String(64), nullable=True),
+    # Which catalog the dataset belongs to. A dataset name means something
+    # within one, and a host can serve more than one — so without this,
+    # "the latest run over demo" is a question with two answers.
+    Column("catalog_id", String(64), nullable=True),
     # Lineage back into the catalog: these three resolve to the exact
     # samples and annotations behind the checkpoint.
     Column("dataset", String(255), nullable=False),

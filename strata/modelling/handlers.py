@@ -70,6 +70,10 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
             parent_run_id=parent.id if parent else None,
             dataset=manifest["dataset"],
             dataset_version=manifest["version"],
+            # From the manifest rather than the request: the directory is
+            # the record of what was trained on, and it is the only thing
+            # both the local and the remote path have in common
+            catalog_id=manifest.get("catalog_id"),
             label_set=manifest["label_set"],
             # Anchored, so predicting or warm-starting from this run later
             # does not depend on the dataset directory still being there

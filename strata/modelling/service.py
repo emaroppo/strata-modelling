@@ -68,6 +68,12 @@ class RoundRequest(BaseModel):
     fresh_params: dict = Field(default_factory=dict)
     #: Cold start, ignoring whatever this host last trained on this dataset.
     fresh: bool = False
+    #: Which catalog the caller believes this host serves. A dataset id is
+    #: an integer meaningful only within one, so if the host is on another
+    #: catalog the same id names different samples — and the round would
+    #: succeed, silently, over the wrong data. Optional so an older client
+    #: still works; checked when given.
+    catalog_id: str | None = None
 
 
 class RoundResponse(BaseModel):
@@ -179,6 +185,28 @@ class BusyError(ServiceError):
     """A second round asked for while one is running."""
 
 
+class CatalogMismatch(ServiceError):
+    """A round prepared against one catalog, submitted to a host on another."""
+
+
+def check_catalog(requested: str | None, serving: str | None) -> None:
+    """Refuse a round prepared against a different catalog.
+
+    ``dataset_id`` is an integer, and integers are only meaningful within
+    one catalog: submitted to a host serving another, the same id names
+    different samples and the round trains on the wrong data without
+    failing. Silence on either side is tolerated so an older client and a
+    catalog predating identities both still work.
+    """
+    if requested is None or serving is None or requested == serving:
+        return
+    raise CatalogMismatch(
+        f"This host serves catalog {serving}, and the round was prepared "
+        f"against {requested}. A dataset id names different samples in "
+        f"each, so training it here would train on the wrong data."
+    )
+
+
 def check_servable(model: str) -> None:
     """Refuse a model this host cannot honestly resolve.
 
@@ -216,6 +244,8 @@ def run_round(
 
     check_servable(request.model)
 
+    check_catalog(request.catalog_id, catalog.id)
+
     name, version = catalog.dataset_named(request.dataset_id)
     target = Path(datasets) / name / f"v{version:03d}"
 
@@ -236,7 +266,9 @@ def run_round(
         materialised = counted["n"]
 
     manifest = Manifest.model_validate_json((target / MANIFEST_NAME).read_text())
-    previous = None if request.fresh else store.latest(manifest.dataset)
+    previous = (
+        None if request.fresh else store.latest(manifest.dataset, manifest.catalog_id)
+    )
     params = (
         {**request.params, **request.fresh_params} if previous is None else request.params
     )
@@ -400,6 +432,16 @@ def build():
         if not hmac.compare_digest(offered, token):
             raise HTTPException(status_code=403, detail="Bad or missing token.")
 
+    served: dict[str, str | None] = {}
+
+    def served_catalog_id() -> str | None:
+        # Memoised: a catalog's identity does not change under a running
+        # host, and the alternative is a connection per submitted round
+        # spent asking a question with one answer.
+        if "id" not in served:
+            served["id"] = catalog_for().id
+        return served["id"]
+
     def run_one(request: RoundRequest, report) -> RoundResponse:
         return run_round(request, catalog_for(), store, datasets, cache, report=report)
 
@@ -419,6 +461,9 @@ def build():
     def round_(request: RoundRequest) -> Job:
         """Accept a round and return the job. It runs after this responds."""
         try:
+            # Before accepting, not inside the job: a caller that gets a 202
+            # for a round which cannot run learns nothing until it polls
+            check_catalog(request.catalog_id, served_catalog_id())
             return jobs.submit(request)
         except BusyError as e:
             # 409 rather than 400: the request is fine, the host is not free
@@ -460,14 +505,14 @@ def build():
         return job
 
     @app.get("/runs/latest", dependencies=[Depends(authorise)])
-    def latest_run(dataset: str) -> dict:
+    def latest_run(dataset: str, catalog: str | None = None) -> dict:
         """The newest run over a dataset, in this host's numbering.
 
         A caller cannot work this out for itself: run ids belong to the
         store that issued them, and the caller's own store is a different
         sequence naming different models.
         """
-        run = store.latest(dataset)
+        run = store.latest(dataset, catalog)
         if run is None:
             raise HTTPException(status_code=404, detail=f"No runs over {dataset!r} here")
         return {"run": run.model_dump(mode="json"), "metrics": _metrics_of(store, run.id)}

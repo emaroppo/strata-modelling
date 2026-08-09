@@ -99,6 +99,7 @@ class RunStore:
                 insert(t.run).values(
                     id=run_id,
                     origin=origin,
+                    catalog_id=run.catalog_id,
                     parent_run_id=run.parent_run_id,
                     dataset=run.dataset,
                     dataset_version=run.dataset_version,
@@ -141,6 +142,7 @@ class RunStore:
             id=str(row.id),
             parent_run_id=None if row.parent_run_id is None else str(row.parent_run_id),
             origin=row.origin,
+            catalog_id=row.catalog_id,
             dataset=row.dataset,
             dataset_version=row.dataset_version,
             label_set=row.label_set,
@@ -152,12 +154,27 @@ class RunStore:
             metrics=metrics,
         )
 
-    def latest(self, dataset: str) -> Run | None:
-        """The newest run over a dataset — what a warm start continues from."""
+    def latest(self, dataset: str, catalog_id: str | None = None) -> Run | None:
+        """The newest run over a dataset — what a warm start continues from.
+
+        Scoped to a catalog when one is given, because a dataset name means
+        something within one and a host can serve several.
+
+        A run recorded before catalogs had identities carries none, and that
+        null is *unknown* rather than *some other catalog* — matching it
+        keeps every existing history findable, where excluding it would cold
+        start a project whose runs are all pre-identity. New runs all carry
+        one, so the scoping tightens on its own.
+        """
+        where = t.run.c.dataset == dataset
+        if catalog_id is not None:
+            where = where & (
+                (t.run.c.catalog_id == catalog_id) | t.run.c.catalog_id.is_(None)
+            )
         with self.engine.connect() as conn:
             run_id = conn.execute(
                 select(t.run.c.id)
-                .where(t.run.c.dataset == dataset)
+                .where(where)
                 # By time, not by id. Ids are minted where a run happens and
                 # sort by their timestamp, but a store holding both those and
                 # older numeric ones would order them by their first digit.
