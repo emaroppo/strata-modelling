@@ -10,15 +10,18 @@ import inspect
 import json
 from pathlib import Path
 
+from pydantic import TypeAdapter
 from sqlalchemy import update
 
-from strata.labels import Choices, ClassificationSchema
+from strata.labels import AnySchema, Choices
 
 from . import tables as t
 from .model import Example, Model
 from .registry import ModelError, absolute, resolve
 from .requests import PredictRequest, Run, ScoredPath, TrainRequest
 from .runs import RunStore
+
+_SCHEMA = TypeAdapter(AnySchema)
 
 MANIFEST_NAME = "manifest.json"
 
@@ -30,7 +33,7 @@ class TrainingError(Exception):
 def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
     """Train from a materialised dataset and record the run."""
     manifest = _read_manifest(request.dataset_dir)
-    schema = ClassificationSchema.model_validate(manifest["label_schema"])
+    schema = _SCHEMA.validate_python(manifest["label_schema"])
     model_cls = resolve(request.model, root=request.dataset_dir)
 
     if model_cls.task != schema.task:
