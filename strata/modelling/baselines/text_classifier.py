@@ -219,7 +219,7 @@ class _TransformerBase(Model):
         keys = items[0].keys()
         return {k: torch.stack([item[k] for item in items]) for k in keys}
 
-    def predict(self, paths: list[Path]) -> list:
+    def predict(self, paths: list[Path], on_batch=None) -> list:
         if self._model is None or not self.classes:
             raise RuntimeError("Model has no weights. Call finetune() or load() first.")
         self._model.eval()
@@ -232,7 +232,7 @@ class _TransformerBase(Model):
             TimeRemainingColumn(),
         ) as progress:
             task = progress.add_task("predict", total=len(paths))
-            for path in paths:
+            for done, path in enumerate(paths, start=1):
                 text = _read_text(path)
                 encoded = self.tokenizer(
                     text,
@@ -246,6 +246,8 @@ class _TransformerBase(Model):
                 logits = self._model(**encoded).logits[0]
                 outputs.append(self._decode(text, logits, offsets))
                 progress.advance(task)
+                if on_batch is not None:
+                    on_batch(done, len(paths))
         return outputs
 
     def save(self, path: Path) -> None:

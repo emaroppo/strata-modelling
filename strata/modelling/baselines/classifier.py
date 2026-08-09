@@ -451,7 +451,7 @@ class MultiLabelClassifier(Model):
             "val_accuracy": total_correct / max(total_samples, 1),
         }
 
-    def predict(self, image_paths: list[Path]) -> list[ChoicesPrediction]:
+    def predict(self, image_paths: list[Path], on_batch=None) -> list[ChoicesPrediction]:
         if self._backbone is None or not self.classes:
             raise RuntimeError("Model has no weights. Call finetune() or load() first.")
         if not image_paths:
@@ -489,12 +489,19 @@ class MultiLabelClassifier(Model):
             ) as progress,
         ):
             predict_task = progress.add_task("predict", total=len(image_paths))
+            done = 0
             for batch in loader:
                 batch = batch.to(self.device)
                 with torch.autocast("cuda", dtype=torch.float16, enabled=use_amp):
                     logits = backbone(batch)
                 batch_probs.append(self._activation(logits).cpu())
                 progress.advance(predict_task, batch.size(0))
+                done += batch.size(0)
+                if on_batch is not None:
+                    # Per batch rather than per sample: a caller is on the
+                    # other end of a network, and thousands of updates say
+                    # the same thing more often.
+                    on_batch(done, len(image_paths))
 
         return [self._to_output(probs) for probs in torch.cat(batch_probs)]
 

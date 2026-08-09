@@ -19,6 +19,11 @@ from strata.labels import Choices, ChoicesPrediction
 #: result — the returned value is the result.
 EpochReport = Callable[[int, int, dict[str, float]], None]
 
+#: What a model reports as it scores: samples done, samples in total.
+#: Nothing more, because a prediction in progress says nothing useful and
+#: the answer is the returned value.
+BatchReport = Callable[[int, int], None]
+
 
 @dataclass(frozen=True)
 class Example:
@@ -78,8 +83,19 @@ class Model(ABC):
         ...
 
     @abstractmethod
-    def predict(self, paths: list[Path]) -> list[ChoicesPrediction]:
-        """One prediction per path, in order."""
+    def predict(
+        self, paths: list[Path], on_batch: "BatchReport | None" = None
+    ) -> list[ChoicesPrediction]:
+        """One prediction per path, in order.
+
+        ``on_batch(done, total)`` is called as scoring proceeds, for the same
+        reason :meth:`finetune` takes ``on_epoch``: ranking a review queue
+        means scoring every unlabelled sample, and a caller on another
+        machine cannot see it happen. Calling it is optional and a model
+        that ignores it still conforms — but it has to accept one, because
+        refusing fails a scoring pass minutes in rather than failing the
+        contract.
+        """
         ...
 
     @abstractmethod

@@ -388,7 +388,7 @@ def stub_predict(monkeypatch):
 
     seen = {}
 
-    def fake(request, store):
+    def fake(request, store, on_batch=None):
         seen["paths"] = list(request.paths)
         return [
             ScoredPath(path=path, value=ChoicesPrediction(values=["a"], confidences=[0.5]))

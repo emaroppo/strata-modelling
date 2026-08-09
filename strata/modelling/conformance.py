@@ -115,6 +115,23 @@ class ModelContract:
         for done, total in seen:
             assert 1 <= done <= total
 
+    def test_predict_accepts_a_progress_report(self, model, examples, classes):
+        """A model may ignore it, but it has to accept it.
+
+        Ranking a review queue means scoring every unlabelled sample, and
+        the machine watching is often not the one doing it. Refusing the
+        argument fails a scoring pass minutes in rather than failing the
+        contract.
+        """
+        model.finetune(examples, classes)
+        seen = []
+        outputs = model.predict(
+            [e.path for e in examples], lambda done, total: seen.append((done, total))
+        )
+        assert len(outputs) == len(examples)
+        for done, total in seen:
+            assert 1 <= done <= total
+
     def test_predict_returns_one_output_per_path(self, model, examples, classes):
         model.finetune(examples, classes)
         paths = [e.path for e in examples]

@@ -293,10 +293,16 @@ def run_prediction(
     if paths:
         if report is not None:
             report("predicting", 0, len(paths))
+
+        def scoring(done: int, total: int) -> None:
+            if report is not None:
+                report("predicting", done, total)
+
         ordered = list(paths)
         outputs = run_predict(
             PredictRequest(run_id=request.run_id, paths=[paths[c] for c in ordered]),
             store,
+            on_batch=scoring,
         )
         made = {c: o.value for c, o in zip(ordered, outputs, strict=True)}
         known.put(request.run_id, made)

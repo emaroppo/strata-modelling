@@ -37,7 +37,7 @@ class CountingModel(Model):
             "n_train": float(len(train)),
         }
 
-    def predict(self, paths):
+    def predict(self, paths, on_batch=None):
         top = self.classes[0] if self.classes else "unknown"
         return [ChoicesPrediction(values=[top], confidences=[self.bias]) for _ in paths]
 

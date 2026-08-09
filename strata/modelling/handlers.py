@@ -84,7 +84,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
     return _attach_checkpoint(store, run, checkpoint)
 
 
-def predict(request: PredictRequest, store: RunStore) -> list[ScoredPath]:
+def predict(request: PredictRequest, store: RunStore, on_batch=None) -> list[ScoredPath]:
     """Run a recorded checkpoint over some paths.
 
     Predictions are returned rather than written. Persisting them is the
@@ -99,7 +99,7 @@ def predict(request: PredictRequest, store: RunStore) -> list[ScoredPath]:
 
     model: Model = _construct(resolve(run.model), run.model, run.params)
     model.load(Path(run.checkpoint))
-    outputs = model.predict(list(request.paths))
+    outputs = model.predict(list(request.paths), on_batch)
     return [
         ScoredPath(path=path, value=value)
         for path, value in zip(request.paths, outputs, strict=True)
