@@ -126,14 +126,14 @@ class Jobs:
         return self._jobs.get(job_id)
 
     def _work(self, job: Job, request: "RoundRequest") -> None:
-        def progress(done: int, total: int) -> None:
-            job.stage = "materialising"
+        def report(stage: str, done: int = 0, total: int = 0) -> None:
+            job.stage = stage
             job.done, job.total = done, total
 
         try:
             job.state = RUNNING
-            job.stage = "materialising"
-            result = self._runner(request, progress)
+            job.stage = "starting"
+            result = self._runner(request, report)
             # Set before done, or a caller that sees done first reads a job
             # with no result and cannot tell success from a lost one
             job.result = result
@@ -174,7 +174,7 @@ def run_round(
     store: RunStore,
     datasets: Path,
     cache: Path | None = None,
-    on_progress=None,
+    report=None,
 ) -> RoundResponse:
     """Materialise a dataset version and train from it.
 
@@ -198,8 +198,8 @@ def run_round(
 
         def tick(done: int, total: int) -> None:
             counted["n"] = done
-            if on_progress is not None:
-                on_progress(done, total)
+            if report is not None:
+                report("materialising", done, total)
 
         catalog.materialise(request.dataset_id, staging, on_progress=tick, cache=cache)
         staging.rename(target)
@@ -207,6 +207,12 @@ def run_round(
 
     manifest = Manifest.model_validate_json((target / MANIFEST_NAME).read_text())
     previous = None if request.fresh else store.latest(manifest.dataset)
+
+    # Said before training rather than after, because training is the long
+    # part: a stage that only advances when a step finishes spends the whole
+    # of the expensive step describing the cheap one that preceded it.
+    if report is not None:
+        report("training")
 
     run = run_train(
         TrainRequest(
@@ -304,8 +310,8 @@ def build():
         if not hmac.compare_digest(offered, token):
             raise HTTPException(status_code=403, detail="Bad or missing token.")
 
-    def run_one(request: RoundRequest, progress) -> RoundResponse:
-        return run_round(request, catalog_for(), store, datasets, cache, on_progress=progress)
+    def run_one(request: RoundRequest, report) -> RoundResponse:
+        return run_round(request, catalog_for(), store, datasets, cache, report=report)
 
     jobs = Jobs(run_one)
     app = FastAPI(title="strata modelling", docs_url=None, redoc_url=None)

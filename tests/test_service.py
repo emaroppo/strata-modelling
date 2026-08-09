@@ -307,3 +307,50 @@ def test_an_unservable_model_is_refused_at_submission():
     # polling a job that was never going to run
     with pytest.raises(ServiceError, match="entry point"):
         jobs.submit(RoundRequest(dataset_id=1, model="model.py:Custom"))
+
+
+def test_the_stage_advances_past_materialising(tmp_path, fixture_dataset, stub_training):
+    """The label has to follow the work, not the last thing that reported.
+
+    Materialising reported progress and training reported nothing, so a job
+    spent its whole ten-minute training run claiming to be fetching files —
+    observable only by listening to the GPU.
+    """
+    from strata.modelling import RunStore
+
+    stages = []
+    run_round(
+        RoundRequest(dataset_id=1, model="stub"),
+        FakeCatalog("d", 2, fixture_dataset),
+        RunStore.local(tmp_path / "runs"),
+        tmp_path / "datasets",
+        report=lambda stage, done=0, total=0: stages.append(stage),
+    )
+
+    assert "materialising" in stages
+    assert stages[-1] == "training"
+
+
+def test_a_job_says_what_it_is_doing():
+    from strata.modelling.service import Jobs
+
+    seen = []
+    release = threading.Event()
+
+    def runner(request, report):
+        report("materialising", 1, 2)
+        seen.append("materialising")
+        report("training")
+        seen.append("training")
+        release.wait(2)
+        return "result"
+
+    jobs = Jobs(runner)
+    job = jobs.submit(RoundRequest(dataset_id=1, model="stub"))
+    for _ in range(100):
+        if jobs.get(job.id).stage == "training":
+            break
+        time.sleep(0.02)
+
+    assert jobs.get(job.id).stage == "training"
+    release.set()
