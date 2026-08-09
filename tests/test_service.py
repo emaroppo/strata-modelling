@@ -354,3 +354,99 @@ def test_a_job_says_what_it_is_doing():
 
     assert jobs.get(job.id).stage == "training"
     release.set()
+
+
+# ----------------------------------------------------------------------
+# Scoring a pool
+# ----------------------------------------------------------------------
+
+
+class FakeCache:
+    """A catalog that can produce files for checksums it knows."""
+
+    def __init__(self, known):
+        self.known = known
+        self.asked = []
+
+    def ensure_cached(self, checksums, cache, on_progress=None):
+        self.asked.append(list(checksums))
+        found = {c: self.known[c] for c in checksums if c in self.known}
+        if on_progress is not None:
+            on_progress(len(found), len(found))
+        return found
+
+
+@pytest.fixture
+def stub_predict(monkeypatch):
+    """Stand in for inference; the handler is covered where it lives.
+
+    run_prediction imports the handler when it runs, so patching the
+    handler's own module is what takes effect.
+    """
+    from strata.labels import ChoicesPrediction
+    from strata.modelling.requests import Prediction
+
+    seen = {}
+
+    def fake(request, store):
+        seen["paths"] = list(request.paths)
+        return [
+            Prediction(path=path, value=ChoicesPrediction(values=["a"], confidences=[0.5]))
+            for path in request.paths
+        ]
+
+    monkeypatch.setattr("strata.modelling.handlers.predict", fake)
+    return seen
+
+
+def test_scoring_is_keyed_by_content(tmp_path, stub_predict):
+    from strata.modelling import RunStore
+    from strata.modelling.service import PredictionRequest, run_prediction
+
+    known = {"a" * 64: tmp_path / "a.jpg", "b" * 64: tmp_path / "b.jpg"}
+    catalog = FakeCache(known)
+
+    result = run_prediction(
+        PredictionRequest(run_id=1, checksums=list(known)),
+        catalog,
+        RunStore.local(tmp_path / "runs"),
+        tmp_path / "cache",
+    )
+
+    # Keyed rather than positional: a sample the catalog does not know is
+    # absent, and a positional answer could not say which one
+    assert set(result.predictions) == set(known)
+    assert result.unknown == []
+
+
+def test_a_sample_the_host_does_not_know_is_reported(tmp_path, stub_predict):
+    from strata.modelling import RunStore
+    from strata.modelling.service import PredictionRequest, run_prediction
+
+    catalog = FakeCache({"a" * 64: tmp_path / "a.jpg"})
+    result = run_prediction(
+        PredictionRequest(run_id=1, checksums=["a" * 64, "c" * 64]),
+        catalog,
+        RunStore.local(tmp_path / "runs"),
+        tmp_path / "cache",
+    )
+    assert result.unknown == ["c" * 64]
+    assert set(result.predictions) == {"a" * 64}
+
+
+def test_scoring_says_what_it_is_doing(tmp_path, stub_predict):
+    from strata.modelling import RunStore
+    from strata.modelling.service import PredictionRequest, run_prediction
+
+    stages = []
+    run_prediction(
+        PredictionRequest(run_id=1, checksums=["a" * 64]),
+        FakeCache({"a" * 64: tmp_path / "a.jpg"}),
+        RunStore.local(tmp_path / "runs"),
+        tmp_path / "cache",
+        report=lambda stage, done=0, total=0: stages.append(stage),
+    )
+    # Fetching a pool and scoring it are both minutes long, and a caller
+    # watching from elsewhere cannot see either
+    assert "fetching" in stages
+    assert "predicting" in stages

@@ -38,9 +38,11 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from strata.labels import ChoicesPrediction
+
 from .handlers import train as run_train
 from .registry import available
-from .requests import Run, TrainRequest
+from .requests import PredictRequest, Run, TrainRequest
 from .runs import RunStore
 
 
@@ -71,6 +73,27 @@ class RoundResponse(BaseModel):
     materialised: int = 0
 
 
+class PredictionRequest(BaseModel):
+    """Score some samples with a run this host holds.
+
+    Checksums rather than paths: a path names a file on the caller's
+    machine, and the whole point is that the caller has none. This host has
+    the bucket and a cache, so it can turn content into files itself.
+    """
+
+    run_id: int
+    checksums: list[str] = Field(default_factory=list)
+
+
+class PredictionResponse(BaseModel):
+    #: Checksum to the value the model produced. Keyed rather than ordered,
+    #: because a sample the catalog does not know is simply absent and a
+    #: positional answer could not say which.
+    predictions: dict[str, ChoicesPrediction] = Field(default_factory=dict)
+    #: Asked about but not in this catalog.
+    unknown: list[str] = Field(default_factory=list)
+
+
 QUEUED, RUNNING, DONE, FAILED = "queued", "running", "done", "failed"
 
 
@@ -83,7 +106,7 @@ class Job(BaseModel):
     stage: str = "queued"
     done: int = 0
     total: int = 0
-    result: RoundResponse | None = None
+    result: RoundResponse | PredictionResponse | None = None
     #: The reason it failed, which is the only thing a caller can act on.
     error: str | None = None
 
@@ -106,8 +129,9 @@ class Jobs:
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
 
-    def submit(self, request: "RoundRequest") -> Job:
-        check_servable(request.model)
+    def submit(self, request, runner=None) -> Job:
+        if isinstance(request, RoundRequest):
+            check_servable(request.model)
         with self._lock:
             busy = next((j for j in self._jobs.values() if not j.finished), None)
             if busy is not None:
@@ -119,13 +143,14 @@ class Jobs:
             job = Job(id=uuid.uuid4().hex[:12])
             self._jobs[job.id] = job
 
-        threading.Thread(target=self._work, args=(job, request), daemon=True).start()
+        work = runner or self._runner
+        threading.Thread(target=self._work, args=(job, request, work), daemon=True).start()
         return job
 
     def get(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)
 
-    def _work(self, job: Job, request: "RoundRequest") -> None:
+    def _work(self, job: Job, request, runner) -> None:
         def report(stage: str, done: int = 0, total: int = 0) -> None:
             job.stage = stage
             job.done, job.total = done, total
@@ -133,7 +158,7 @@ class Jobs:
         try:
             job.state = RUNNING
             job.stage = "starting"
-            result = self._runner(request, report)
+            result = runner(request, report)
             # Set before done, or a caller that sees done first reads a job
             # with no result and cannot tell success from a lost one
             job.result = result
@@ -232,6 +257,43 @@ def run_round(
     )
     return RoundResponse(
         run=run, metrics=_metrics_of(store, run.id), materialised=materialised
+    )
+
+
+def run_prediction(
+    request: PredictionRequest,
+    catalog,
+    store: RunStore,
+    cache: Path,
+    report=None,
+) -> PredictionResponse:
+    """Score samples by content, fetching whatever bytes are missing.
+
+    The pool a review queue ranks is every unlabelled sample, so this is the
+    expensive half of a push and the reason it belongs on the machine with
+    the GPU rather than the machine with the reviewer.
+    """
+    from .handlers import predict as run_predict
+
+    def fetching(done: int, total: int) -> None:
+        if report is not None:
+            report("fetching", done, total)
+
+    paths = catalog.ensure_cached(request.checksums, cache, on_progress=fetching)
+    unknown = [c for c in request.checksums if c not in paths]
+
+    if report is not None:
+        report("predicting", 0, len(paths))
+    if not paths:
+        return PredictionResponse(unknown=unknown)
+
+    ordered = list(paths)
+    outputs = run_predict(
+        PredictRequest(run_id=request.run_id, paths=[paths[c] for c in ordered]), store
+    )
+    return PredictionResponse(
+        predictions={c: o.value for c, o in zip(ordered, outputs, strict=True)},
+        unknown=unknown,
     )
 
 
@@ -339,6 +401,26 @@ def build():
             return jobs.submit(request)
         except BusyError as e:
             # 409 rather than 400: the request is fine, the host is not free
+            raise HTTPException(status_code=409, detail=str(e)) from None
+        except ServiceError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
+
+    @app.post("/predict", dependencies=[Depends(authorise)], status_code=202)
+    def predict_(request: PredictionRequest) -> Job:
+        """Accept a scoring job. Same queue as training: both need the GPU."""
+        if cache is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No $STRATA_BLOBS_CACHE, so this host has nowhere to put "
+                "the samples it would have to fetch to score them.",
+            )
+
+        def run_it(req, report):
+            return run_prediction(req, catalog_for(), store, cache, report)
+
+        try:
+            return jobs.submit(request, runner=run_it)
+        except BusyError as e:
             raise HTTPException(status_code=409, detail=str(e)) from None
         except ServiceError as e:
             raise HTTPException(status_code=400, detail=str(e)) from None
