@@ -7,11 +7,17 @@ machine that has neither.
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
 from strata.labels import Choices, ChoicesPrediction
+
+#: What a model reports as it trains: epochs done, epochs in total, and
+#: whatever it knows so far. The metrics are a snapshot rather than a
+#: result — the returned value is the result.
+EpochReport = Callable[[int, int, dict[str, float]], None]
 
 
 @dataclass(frozen=True)
@@ -54,11 +60,20 @@ class Model(ABC):
         train: list[Example],
         classes: list[str],
         val: list[Example] | None = None,
+        on_epoch: "EpochReport | None" = None,
     ) -> dict[str, float]:
         """Train, and return metrics.
 
         ``val`` is held out: evaluate on it afterwards and include the
         results, conventionally prefixed ``val_``.
+
+        ``on_epoch(done, total, metrics)`` is called as training proceeds,
+        and exists because training is the long part and the only machine
+        that can see it is the one doing it. A model served over HTTP prints
+        to a journal nobody is reading; a caller watching a round otherwise
+        cannot tell minute one from minute nine. Calling it is optional and
+        a model that ignores it still conforms — the caller must treat
+        silence as "no news", never as "stalled".
         """
         ...
 

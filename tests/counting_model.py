@@ -27,7 +27,7 @@ class CountingModel(Model):
         self.classes = []
         self.seen = {"train": 0, "val": 0, "warm_started": False}
 
-    def finetune(self, train, classes, val=None):
+    def finetune(self, train, classes, val=None, on_epoch=None):
         self.classes = list(classes)
         self.seen["train"] = len(train)
         self.seen["val"] = len(val or [])

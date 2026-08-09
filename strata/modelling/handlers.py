@@ -27,7 +27,7 @@ class TrainingError(Exception):
     """A training job that cannot be run as requested."""
 
 
-def train(request: TrainRequest, store: RunStore) -> Run:
+def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
     """Train from a materialised dataset and record the run."""
     manifest = _read_manifest(request.dataset_dir)
     schema = ClassificationSchema.model_validate(manifest["label_schema"])
@@ -58,7 +58,7 @@ def train(request: TrainRequest, store: RunStore) -> Run:
     if not train_examples:
         raise TrainingError(f"{request.dataset_dir} has no training samples")
 
-    metrics = model.finetune(train_examples, classes, val_examples or None)
+    metrics = model.finetune(train_examples, classes, val_examples or None, on_epoch)
 
     run = store.record(
         Run(

@@ -146,6 +146,7 @@ class _TransformerBase(Model):
         train: list[Example],
         classes: list[str],
         val: list[Example] | None = None,
+        on_epoch=None,
     ) -> dict:
         samples, val_samples = train, val
         self._prepare(classes)

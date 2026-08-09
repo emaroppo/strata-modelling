@@ -99,6 +99,22 @@ class ModelContract:
 
     # -- prediction -----------------------------------------------------
 
+    def test_finetune_accepts_a_progress_report(self, model, examples, classes):
+        """A model may ignore it, but it has to accept it.
+
+        The caller is often on the other end of a network and cannot see
+        training happen. Reporting is optional — silence means no news, not
+        a stall — but refusing the argument fails the round rather than the
+        contract, and does so ten minutes in.
+        """
+        seen = []
+        metrics = model.finetune(
+            examples, classes, None, lambda done, total, m: seen.append((done, total))
+        )
+        assert isinstance(metrics, dict)
+        for done, total in seen:
+            assert 1 <= done <= total
+
     def test_predict_returns_one_output_per_path(self, model, examples, classes):
         model.finetune(examples, classes)
         paths = [e.path for e in examples]

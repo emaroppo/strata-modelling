@@ -124,7 +124,7 @@ def stub_training(monkeypatch):
 
     seen = {}
 
-    def fake(request, store):
+    def fake(request, store, on_epoch=None):
         seen["request"] = request
         return store.record(
             Run(

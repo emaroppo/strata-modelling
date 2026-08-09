@@ -286,6 +286,7 @@ class MultiLabelClassifier(Model):
         train: list[Example],
         classes: list[str],
         val: list[Example] | None = None,
+        on_epoch=None,
     ) -> dict:
         samples, val_samples = train, val
         classes = self._effective_classes(classes)
@@ -392,6 +393,20 @@ class MultiLabelClassifier(Model):
                 total_loss += epoch_loss
                 total_correct += epoch_correct
                 total_samples += epoch_samples
+
+                if on_epoch is not None:
+                    # At the epoch boundary rather than per batch: a caller
+                    # is on the other end of a network, and a report per
+                    # step would be thousands of updates to say the same
+                    # thing more often.
+                    on_epoch(
+                        epoch,
+                        self.num_epochs,
+                        {
+                            "loss": epoch_loss / max(epoch_samples, 1),
+                            "accuracy": epoch_correct / max(epoch_samples, 1),
+                        },
+                    )
 
         avg_loss = total_loss / max(total_samples, 1)
         accuracy = total_correct / max(total_samples, 1)

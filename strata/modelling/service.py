@@ -214,6 +214,12 @@ def run_round(
     if report is not None:
         report("training")
 
+    def epoch(done: int, total: int, metrics: dict) -> None:
+        if report is None:
+            return
+        note = " ".join(f"{k}={v:.4f}" for k, v in sorted(metrics.items()))
+        report(f"training ({note})" if note else "training", done, total)
+
     run = run_train(
         TrainRequest(
             dataset_dir=target,
@@ -222,6 +228,7 @@ def run_round(
             parent_run_id=previous.id if previous else None,
         ),
         store,
+        on_epoch=epoch,
     )
     return RoundResponse(
         run=run, metrics=_metrics_of(store, run.id), materialised=materialised
