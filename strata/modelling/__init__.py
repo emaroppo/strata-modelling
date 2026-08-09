@@ -33,6 +33,7 @@ while this is built.
 
 from .handlers import TrainingError, predict, train
 from .model import Example, Model
+from .predictions import PredictionCache
 from .registry import ENTRY_POINT_GROUP, ModelError, available, resolve
 from .requests import Prediction, PredictRequest, Run, TrainRequest
 from .runs import RunStore
@@ -45,6 +46,7 @@ __all__ = [
     "PredictRequest",
     "Prediction",
     "Run",
+    "PredictionCache",
     "RunStore",
     "TrainRequest",
     "TrainingError",

@@ -274,27 +274,34 @@ def run_prediction(
     the GPU rather than the machine with the reviewer.
     """
     from .handlers import predict as run_predict
+    from .predictions import PredictionCache
+
+    # Kept beside the runs, so the answer is the same for every caller
+    # rather than for whichever machine asked first.
+    known = PredictionCache.beside(store)
+    already = known.get(request.run_id, request.checksums)
+    wanted = [c for c in request.checksums if c not in already]
 
     def fetching(done: int, total: int) -> None:
         if report is not None:
             report("fetching", done, total)
 
-    paths = catalog.ensure_cached(request.checksums, cache, on_progress=fetching)
-    unknown = [c for c in request.checksums if c not in paths]
+    paths = catalog.ensure_cached(wanted, cache, on_progress=fetching)
+    unknown = [c for c in wanted if c not in paths]
 
-    if report is not None:
-        report("predicting", 0, len(paths))
-    if not paths:
-        return PredictionResponse(unknown=unknown)
+    made: dict[str, ChoicesPrediction] = {}
+    if paths:
+        if report is not None:
+            report("predicting", 0, len(paths))
+        ordered = list(paths)
+        outputs = run_predict(
+            PredictRequest(run_id=request.run_id, paths=[paths[c] for c in ordered]),
+            store,
+        )
+        made = {c: o.value for c, o in zip(ordered, outputs, strict=True)}
+        known.put(request.run_id, made)
 
-    ordered = list(paths)
-    outputs = run_predict(
-        PredictRequest(run_id=request.run_id, paths=[paths[c] for c in ordered]), store
-    )
-    return PredictionResponse(
-        predictions={c: o.value for c, o in zip(ordered, outputs, strict=True)},
-        unknown=unknown,
-    )
+    return PredictionResponse(predictions={**already, **made}, unknown=unknown)
 
 
 def _metrics_of(store: RunStore, run_id: int) -> dict[str, float]:
@@ -437,6 +444,19 @@ def build():
                 f"a round that finished is in the run store.",
             )
         return job
+
+    @app.get("/runs/latest", dependencies=[Depends(authorise)])
+    def latest_run(dataset: str) -> dict:
+        """The newest run over a dataset, in this host's numbering.
+
+        A caller cannot work this out for itself: run ids belong to the
+        store that issued them, and the caller's own store is a different
+        sequence naming different models.
+        """
+        run = store.latest(dataset)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"No runs over {dataset!r} here")
+        return {"run": run.model_dump(mode="json"), "metrics": _metrics_of(store, run.id)}
 
     @app.get("/runs/{run_id}", dependencies=[Depends(authorise)])
     def get_run(run_id: int) -> dict:
