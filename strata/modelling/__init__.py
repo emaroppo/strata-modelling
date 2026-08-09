@@ -23,12 +23,10 @@ Two properties this has to record that are easy to leave out:
   classes by position, so a warm start from a checkpoint whose class list
   has since been reordered corrupts silently rather than failing.
 
-Predictions are returned, not written: persisting them is the caller's
-business, and doing it here would put the catalog back into the core.
-
-The baselines still live in ``strata.labeller`` and move here at the
-cutover, because moving them earlier would break the tool that is in use
-while this is built.
+Predictions are returned by the core, not written: persisting them is the
+caller's business, and doing it here would put the catalog back into it.
+``PredictionCache`` is that persistence, and it lives beside the runs
+because a prediction is a function of a checkpoint and some bytes.
 """
 
 from .handlers import TrainingError, predict, train
