@@ -17,7 +17,7 @@ from strata.labels import Choices, ClassificationSchema
 from . import tables as t
 from .model import Example, Model
 from .registry import ModelError, absolute, resolve
-from .requests import Prediction, PredictRequest, Run, TrainRequest
+from .requests import PredictRequest, Run, ScoredPath, TrainRequest
 from .runs import RunStore
 
 MANIFEST_NAME = "manifest.json"
@@ -81,7 +81,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
     return _attach_checkpoint(store, run, checkpoint)
 
 
-def predict(request: PredictRequest, store: RunStore) -> list[Prediction]:
+def predict(request: PredictRequest, store: RunStore) -> list[ScoredPath]:
     """Run a recorded checkpoint over some paths.
 
     Predictions are returned rather than written. Persisting them is the
@@ -98,7 +98,7 @@ def predict(request: PredictRequest, store: RunStore) -> list[Prediction]:
     model.load(Path(run.checkpoint))
     outputs = model.predict(list(request.paths))
     return [
-        Prediction(path=path, value=value)
+        ScoredPath(path=path, value=value)
         for path, value in zip(request.paths, outputs, strict=True)
     ]
 

@@ -105,8 +105,47 @@ def test_a_wrapped_prediction_is_refused(cache):
     """
     from pathlib import Path
 
-    from strata.modelling.requests import Prediction
+    from strata.modelling.requests import ScoredPath
 
-    wrapped = Prediction(path=Path("/x.jpg"), value=guess("cat"))
-    with pytest.raises(TypeError, match="ChoicesPrediction"):
+    wrapped = ScoredPath(path=Path("/x.jpg"), value=guess("cat"))
+    with pytest.raises(TypeError, match="model output"):
         cache.put(1, {"a" * 64: wrapped})
+
+
+def test_it_holds_whatever_a_model_produced(cache):
+    """Choices, spans and boxes alike, read back as what they were.
+
+    Being indifferent to the label format is the point of the project. A
+    cache pinned to one task type refuses every other, and a prediction
+    parsed as a plain value keeps the answer and loses how sure the model
+    was of it.
+    """
+    from strata.labels import Box, BoxesPrediction, Span, SpansPrediction
+
+    boxes = BoxesPrediction(
+        values=[Box(label="cat", x=0.1, y=0.2, width=0.3, height=0.4)],
+        confidences=[0.6],
+    )
+    spans = SpansPrediction(
+        values=[Span(label="name", start=0, end=4)], confidences=[0.7]
+    )
+    cache.put(3, {"a" * 64: boxes, "b" * 64: spans})
+
+    back = cache.get(3, ["a" * 64, "b" * 64])
+    assert back["a" * 64] == boxes
+    assert back["b" * 64] == spans
+    # The confidences are what a ranking sorts on; losing them silently
+    # reorders the queue rather than failing
+    assert back["a" * 64].confidences == [0.6]
+
+
+def test_a_plain_value_is_refused_too(cache):
+    """Not model output, and storing it loses the same thing silently.
+
+    A Choices has no confidences, so it reads back as a prediction that was
+    sure of nothing — which a ranking then sorts to the front.
+    """
+    from strata.labels import Choices
+
+    with pytest.raises(TypeError, match="model output"):
+        cache.put(1, {"a" * 64: Choices(values=["cat"])})

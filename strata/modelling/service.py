@@ -38,7 +38,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from strata.labels import ChoicesPrediction
+from strata.labels import AnyPrediction, Prediction
 
 from .handlers import train as run_train
 from .registry import available
@@ -89,7 +89,7 @@ class PredictionResponse(BaseModel):
     #: Checksum to the value the model produced. Keyed rather than ordered,
     #: because a sample the catalog does not know is simply absent and a
     #: positional answer could not say which.
-    predictions: dict[str, ChoicesPrediction] = Field(default_factory=dict)
+    predictions: dict[str, AnyPrediction] = Field(default_factory=dict)
     #: Asked about but not in this catalog.
     unknown: list[str] = Field(default_factory=list)
 
@@ -289,7 +289,7 @@ def run_prediction(
     paths = catalog.ensure_cached(wanted, cache, on_progress=fetching)
     unknown = [c for c in wanted if c not in paths]
 
-    made: dict[str, ChoicesPrediction] = {}
+    made: dict[str, Prediction] = {}
     if paths:
         if report is not None:
             report("predicting", 0, len(paths))

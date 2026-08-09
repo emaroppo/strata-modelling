@@ -35,7 +35,7 @@ from .handlers import TrainingError, predict, train
 from .model import Example, Model
 from .predictions import PredictionCache
 from .registry import ENTRY_POINT_GROUP, ModelError, available, resolve
-from .requests import Prediction, PredictRequest, Run, TrainRequest
+from .requests import PredictRequest, Run, ScoredPath, TrainRequest
 from .runs import RunStore
 
 __all__ = [
@@ -44,7 +44,7 @@ __all__ = [
     "Model",
     "ModelError",
     "PredictRequest",
-    "Prediction",
+    "ScoredPath",
     "Run",
     "PredictionCache",
     "RunStore",

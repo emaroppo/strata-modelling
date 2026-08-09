@@ -22,16 +22,24 @@ to buy the same minutes of GPU again.
 Keyed on the checksum rather than a sample id, for the same reason task
 URLs are: an id belongs to one catalog's numbering, while the bytes are
 what the model actually saw.
+
+It holds whatever a model produced — choices, spans, boxes — and reads it
+back as what it was, through the discriminator. Pinning it to one of them
+would make a cache that quietly refuses, or worse mangles, every task type
+but the first.
 """
 
 from pathlib import Path
 
+from pydantic import TypeAdapter
 from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from strata.labels import ChoicesPrediction
+from strata.labels import AnyPrediction, Prediction
 
 from . import tables as t
+
+_PREDICTION = TypeAdapter(AnyPrediction)
 
 
 def _chunks(items: list, size: int):
@@ -60,9 +68,9 @@ class PredictionCache:
         """The cache belonging to a run store."""
         return cls(store.engine)
 
-    def get(self, run_id: int, checksums: list[str]) -> dict[str, ChoicesPrediction]:
+    def get(self, run_id: int, checksums: list[str]) -> dict[str, Prediction]:
         """Whatever of ``checksums`` this run has already answered."""
-        found: dict[str, ChoicesPrediction] = {}
+        found: dict[str, Prediction] = {}
         if not checksums:
             return found
         with self.engine.connect() as conn:
@@ -74,17 +82,17 @@ class PredictionCache:
                     )
                 )
                 for row in rows:
-                    found[row.checksum] = ChoicesPrediction.model_validate_json(row.value)
+                    found[row.checksum] = _PREDICTION.validate_json(row.value)
         return found
 
-    def put(self, run_id: int, made: dict[str, ChoicesPrediction]) -> int:
+    def put(self, run_id: int, made: dict[str, Prediction]) -> int:
         """Record what a run said. Rewriting an entry is a no-op by construction."""
         if not made:
             return 0
         wrong = {
             checksum: type(value).__name__
             for checksum, value in made.items()
-            if not isinstance(value, ChoicesPrediction)
+            if not isinstance(value, Prediction)
         }
         if wrong:
             # A wrapper around a prediction serialises happily and reads
@@ -93,8 +101,10 @@ class PredictionCache:
             # full of answers until a ranking sorts on them.
             kinds = ", ".join(sorted(set(wrong.values())))
             raise TypeError(
-                f"A prediction cache holds ChoicesPrediction, not {kinds}. "
-                f"Stored as-is these read back empty rather than failing."
+                f"A prediction cache holds model output, not {kinds}. "
+                f"Anything else — a wrapper around one, or a plain annotation "
+                f"value — serialises happily and reads back with its "
+                f"confidences gone rather than failing."
             )
         rows = [
             {"run_id": run_id, "checksum": checksum, "value": value.model_dump_json()}

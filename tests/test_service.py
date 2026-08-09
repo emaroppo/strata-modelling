@@ -384,14 +384,14 @@ def stub_predict(monkeypatch):
     handler's own module is what takes effect.
     """
     from strata.labels import ChoicesPrediction
-    from strata.modelling.requests import Prediction
+    from strata.modelling.requests import ScoredPath
 
     seen = {}
 
     def fake(request, store):
         seen["paths"] = list(request.paths)
         return [
-            Prediction(path=path, value=ChoicesPrediction(values=["a"], confidences=[0.5]))
+            ScoredPath(path=path, value=ChoicesPrediction(values=["a"], confidences=[0.5]))
             for path in request.paths
         ]
 

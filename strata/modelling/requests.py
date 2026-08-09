@@ -43,8 +43,14 @@ class PredictRequest(BaseModel):
     paths: list[Path] = Field(default_factory=list)
 
 
-class Prediction(BaseModel):
-    """One model output, tied to what it was made from."""
+class ScoredPath(BaseModel):
+    """One model output, tied to the file it was made from.
+
+    Not a prediction — it *holds* one. The distinction earns its keep: when
+    both were called Prediction, code unwrapped .value in some places and
+    not others, and a cache ended up storing wrappers that read back as
+    empty values.
+    """
 
     path: Path
     value: ChoicesPrediction
