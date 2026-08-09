@@ -32,6 +32,7 @@ while this is built.
 """
 
 from .handlers import TrainingError, predict, train
+from .merge import StoreMergeError, StoreMergeReport, merge_stores
 from .model import Example, Model
 from .predictions import PredictionCache
 from .registry import ENTRY_POINT_GROUP, ModelError, available, resolve
@@ -48,6 +49,9 @@ __all__ = [
     "Run",
     "PredictionCache",
     "RunStore",
+    "StoreMergeError",
+    "StoreMergeReport",
+    "merge_stores",
     "TrainRequest",
     "TrainingError",
     "available",
