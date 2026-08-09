@@ -450,3 +450,29 @@ def test_scoring_says_what_it_is_doing(tmp_path, stub_predict):
     # watching from elsewhere cannot see either
     assert "fetching" in stages
     assert "predicting" in stages
+
+
+def test_a_cold_round_takes_the_fresh_params_whatever_was_asked(
+    tmp_path, fixture_dataset, stub_training
+):
+    """The host decides, because only the host knows if it has a parent.
+
+    A caller asking for a warm start against a store that turns out to be
+    empty would otherwise get a cold run trained on an increment's settings
+    — undertrained, and indistinguishable from a real baseline afterwards.
+    """
+    from strata.modelling import RunStore
+
+    catalog = FakeCatalog("d", 2, fixture_dataset)
+    store = RunStore.local(tmp_path / "runs")
+    datasets = tmp_path / "datasets"
+    request = RoundRequest(
+        dataset_id=1, model="stub", params={"num_epochs": 4}, fresh_params={"num_epochs": 8}
+    )
+
+    run_round(request, catalog, store, datasets)
+    assert stub_training["request"].params == {"num_epochs": 8}
+
+    # And the second, which has something to continue, takes the increment's
+    run_round(request, catalog, store, datasets)
+    assert stub_training["request"].params == {"num_epochs": 4}

@@ -61,6 +61,11 @@ class RoundRequest(BaseModel):
     #: :func:`check_servable`.
     model: str
     params: dict = Field(default_factory=dict)
+    #: Applied over ``params`` when the round starts cold. Both sets travel
+    #: because only this host knows whether it has a parent: a caller asking
+    #: for a warm start against a store that turns out to be empty would
+    #: otherwise get a cold run trained for as long as a warm one.
+    fresh_params: dict = Field(default_factory=dict)
     #: Cold start, ignoring whatever this host last trained on this dataset.
     fresh: bool = False
 
@@ -232,6 +237,9 @@ def run_round(
 
     manifest = Manifest.model_validate_json((target / MANIFEST_NAME).read_text())
     previous = None if request.fresh else store.latest(manifest.dataset)
+    params = (
+        {**request.params, **request.fresh_params} if previous is None else request.params
+    )
 
     # Said before training rather than after, because training is the long
     # part: a stage that only advances when a step finishes spends the whole
@@ -249,7 +257,7 @@ def run_round(
         TrainRequest(
             dataset_dir=target,
             model=request.model,
-            params=request.params,
+            params=params,
             parent_run_id=previous.id if previous else None,
         ),
         store,
