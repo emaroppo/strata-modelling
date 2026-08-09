@@ -148,10 +148,9 @@ class _TransformerBase(Model):
         val: list[Example] | None = None,
         on_epoch=None,
     ) -> dict:
-        samples, val_samples = train, val
         self._prepare(classes)
         loader = DataLoader(
-            _TextDataset(samples, self._encode),
+            _TextDataset(train, self._encode),
             batch_size=self.batch_size,
             shuffle=True,
             collate_fn=self._collate,
@@ -192,8 +191,8 @@ class _TransformerBase(Model):
                     progress.update(task, advance=1, loss=total_loss / max(seen, 1))
 
         metrics = {"loss": total_loss / max(seen, 1)}
-        if val_samples:
-            metrics.update(self._evaluate(val_samples))
+        if val:
+            metrics.update(self._evaluate(val))
         return metrics
 
     def _evaluate(self, samples: list[dict]) -> dict:

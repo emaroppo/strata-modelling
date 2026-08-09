@@ -288,13 +288,12 @@ class MultiLabelClassifier(Model):
         val: list[Example] | None = None,
         on_epoch=None,
     ) -> dict:
-        samples, val_samples = train, val
         classes = self._effective_classes(classes)
         self._prepare_backbone(classes)
         self.classes = classes
 
         dataset = _ImageDataset(
-            samples,
+            train,
             classes,
             self._train_transform,
             draft_size=self.IMG_SIZE,
@@ -411,8 +410,8 @@ class MultiLabelClassifier(Model):
         avg_loss = total_loss / max(total_samples, 1)
         accuracy = total_correct / max(total_samples, 1)
         metrics = {"loss": avg_loss, "accuracy": accuracy}
-        if val_samples:
-            metrics.update(self._evaluate(val_samples, criterion))
+        if val:
+            metrics.update(self._evaluate(val, criterion))
         return metrics
 
     def _evaluate(self, samples: list[dict], criterion: nn.Module) -> dict:
