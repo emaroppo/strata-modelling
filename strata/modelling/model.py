@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
-from strata.labels import Choices, ChoicesPrediction
+from strata.labels import AnyPrediction, AnyValue
 
 #: What a model reports as it trains: epochs done, epochs in total, and
 #: whatever it knows so far. The metrics are a snapshot rather than a
@@ -27,10 +27,16 @@ BatchReport = Callable[[int, int], None]
 
 @dataclass(frozen=True)
 class Example:
-    """One labelled sample as a model sees it."""
+    """One labelled sample as a model sees it.
+
+    ``target`` is whatever the label set stores — choices for
+    classification, spans for a tagger, boxes for a detector. Naming one
+    concrete type here would say that a model can only ever be trained on
+    that one, which is not what any of the code below assumes.
+    """
 
     path: Path
-    target: Choices
+    target: AnyValue
 
 
 class Model(ABC):
@@ -85,7 +91,7 @@ class Model(ABC):
     @abstractmethod
     def predict(
         self, paths: list[Path], on_batch: "BatchReport | None" = None
-    ) -> list[ChoicesPrediction]:
+    ) -> list[AnyPrediction]:
         """One prediction per path, in order.
 
         ``on_batch(done, total)`` is called as scoring proceeds, for the same

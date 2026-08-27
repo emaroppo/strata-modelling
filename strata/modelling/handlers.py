@@ -13,7 +13,7 @@ from pathlib import Path
 from pydantic import TypeAdapter
 from sqlalchemy import update
 
-from strata.labels import AnySchema, Choices
+from strata.labels import AnySchema, AnyValue
 
 from . import tables as t
 from .model import Example, Model
@@ -22,6 +22,11 @@ from .requests import PredictRequest, Run, ScoredPath, TrainRequest
 from .runs import RunStore
 
 _SCHEMA = TypeAdapter(AnySchema)
+#: Manifest values are whatever the label set stores — choices, spans,
+#: boxes. Validating them as one concrete type instead reads every other
+#: kind as a validation error, which is what made training a span or bbox
+#: dataset impossible: the union is the only thing that admits all three.
+_VALUE = TypeAdapter(AnyValue)
 
 MANIFEST_NAME = "manifest.json"
 
@@ -150,7 +155,7 @@ def _examples(directory: Path, manifest: dict) -> tuple[list[Example], list[Exam
             continue
         example = Example(
             path=Path(directory) / sample["path"],
-            target=Choices.model_validate(sample["value"]),
+            target=_VALUE.validate_python(sample["value"]),
         )
         (val_examples if sample.get("val") else train_examples).append(example)
     return train_examples, val_examples
