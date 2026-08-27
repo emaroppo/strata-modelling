@@ -208,6 +208,22 @@ class RunStore:
                 ).all()
             ]
 
+    def metric_names(self, dataset: str) -> list[str]:
+        """Which metrics this dataset's runs actually recorded.
+
+        Models report what they like — accuracy for a classifier, span F1
+        for a tagger — so a caller asking for one that is absent is better
+        told what is there than guessed at.
+        """
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                select(t.metric.c.name)
+                .join(t.run, t.metric.c.run_id == t.run.c.id)
+                .where((t.run.c.dataset == dataset) & (t.metric.c.epoch.is_(None)))
+                .distinct()
+            ).all()
+        return sorted(row.name for row in rows)
+
     def chain(self, run_id: str) -> list[Run]:
         """A run and everything it continued from, oldest first.
 
