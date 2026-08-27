@@ -13,7 +13,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from strata.labels import ChoicesPrediction
+from strata.labels import AnyPrediction
 
 
 class TrainRequest(BaseModel):
@@ -53,7 +53,11 @@ class ScoredPath(BaseModel):
     """
 
     path: Path
-    value: ChoicesPrediction
+    #: Whatever the model's task emits. Naming one concrete type here
+    #: refused every span and box prediction on the way out of a scoring
+    #: pass, which is the last place the wrapper travels before the
+    #: review queue is ranked.
+    value: AnyPrediction
 
 
 class Run(BaseModel):
