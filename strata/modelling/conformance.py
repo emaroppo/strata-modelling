@@ -29,13 +29,35 @@ should only ever be imported from a test module.
 
 import pytest
 
-from strata.labels import ChoicesPrediction
+from strata.labels import BoxesPrediction, ChoicesPrediction, SpansPrediction
 
 from .model import Example, Model
 
 
+def _class_names(values) -> set[str]:
+    """The classes a value asserts, whatever kind of value it is.
+
+    A classification target names its classes directly; a span or a box
+    carries one on each labelled thing. Reading ``values`` as class names
+    unconditionally is what made this suite classification-only, and it
+    failed as a type error rather than as a contract violation.
+    """
+    return {v if isinstance(v, str) else v.label for v in values}
+
+
 class ModelContract:
     """Subclass this in a plugin's tests and supply the two fixtures."""
+
+    #: What a model of each task emits. Deliberately not a plugin surface:
+    #: a task predicting something not in this table is a new label type,
+    #: and a new label type is added to ``strata.labels`` first — the
+    #: unions there are what every layer between a reviewer and a model
+    #: reads a value through.
+    PREDICTION_TYPES: dict[str, type] = {
+        "classification": ChoicesPrediction,
+        "span": SpansPrediction,
+        "bbox": BoxesPrediction,
+    }
 
     @pytest.fixture
     def model(self) -> Model:
@@ -63,10 +85,21 @@ class ModelContract:
     def classes(self, examples) -> list[str]:
         seen: list[str] = []
         for example in examples:
-            for value in example.target.values:
-                if value not in seen:
-                    seen.append(value)
+            for name in sorted(_class_names(example.target.values)):
+                if name not in seen:
+                    seen.append(name)
         return seen or ["alpha"]
+
+    @pytest.fixture
+    def expected_prediction(self, model) -> type:
+        """What this model's task says it must emit."""
+        task = type(model).task
+        if task not in self.PREDICTION_TYPES:
+            raise AssertionError(
+                f"{type(model).__name__} declares task {task!r}, which names "
+                f"no prediction type. Known: {sorted(self.PREDICTION_TYPES)}."
+            )
+        return self.PREDICTION_TYPES[task]
 
     # -- declarations ---------------------------------------------------
 
@@ -137,17 +170,17 @@ class ModelContract:
         paths = [e.path for e in examples]
         assert len(model.predict(paths)) == len(paths)
 
-    def test_predict_returns_predictions(self, model, examples, classes):
+    def test_predict_returns_predictions(self, model, examples, classes, expected_prediction):
         model.finetune(examples, classes)
         outputs = model.predict([e.path for e in examples])
-        assert all(isinstance(o, ChoicesPrediction) for o in outputs)
+        assert all(isinstance(o, expected_prediction) for o in outputs)
 
     def test_predictions_stay_within_the_class_list(self, model, examples, classes):
         # A class the label set has never heard of cannot be stored, so
         # inventing one turns into a validation failure much later
         model.finetune(examples, classes)
         for output in model.predict([e.path for e in examples]):
-            assert set(output.values) <= set(classes)
+            assert _class_names(output.values) <= set(classes)
 
     def test_predict_on_nothing_returns_nothing(self, model, examples, classes):
         model.finetune(examples, classes)
@@ -184,7 +217,7 @@ class ModelContract:
         restored = fresh
         restored.load(checkpoint)
         for output in restored.predict([e.path for e in examples]):
-            assert set(output.values) <= set(classes)
+            assert _class_names(output.values) <= set(classes)
 
 
 __all__ = ["ModelContract"]
