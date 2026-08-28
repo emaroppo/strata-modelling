@@ -24,10 +24,11 @@ import pytest
 torch = pytest.importorskip("torch", reason="needs the text extra")
 pytest.importorskip("transformers", reason="needs the text extra")
 
-from strata.labels import Choices, Span, Spans  # noqa: E402
+from strata.labels import Choices, ClassificationSchema, Span, Spans  # noqa: E402
 from strata.modelling import Example  # noqa: E402
 from strata.modelling.baselines.text_classifier import (  # noqa: E402
     TextClassifier,
+    TextMulticlassClassifier,
     TextSpanTagger,
 )
 from strata.modelling.conformance import ModelContract  # noqa: E402
@@ -74,6 +75,13 @@ class _TinyEncoder(torch.nn.Module):
                 loss = torch.nn.functional.cross_entropy(
                     logits.reshape(-1, self.num_labels), labels.reshape(-1),
                     ignore_index=-100,
+                )
+            elif labels.dtype == torch.long:
+                # A class index per document: the single-label head. Branched
+                # on the target rather than on a flag, which is what the real
+                # encoder does with `problem_type`.
+                loss = torch.nn.functional.cross_entropy(
+                    logits, labels, ignore_index=-100
                 )
             else:
                 loss = torch.nn.functional.binary_cross_entropy_with_logits(
@@ -128,6 +136,45 @@ class TestTextClassifier(_TextContract):
             Example(path=path, target=Choices(values=["alpha" if i % 2 else "beta"]))
             for i, path in enumerate(documents)
         ]
+
+
+class TestTextMulticlassClassifier(_TextContract):
+    """The single-label head, held to the same contract.
+
+    Its ``schema`` fixture is overridden because the plainest classification
+    label set is multi-choice, and this model exists precisely to refuse
+    that one.
+    """
+
+    MODEL = TextMulticlassClassifier
+    PER_TOKEN = False
+
+    @pytest.fixture
+    def schema(self, classes):
+        return ClassificationSchema(classes=list(classes), multiple=False)
+
+    @pytest.fixture
+    def examples(self, documents):
+        return [
+            Example(path=path, target=Choices(values=["alpha" if i % 2 else "beta"]))
+            for i, path in enumerate(documents)
+        ]
+
+
+class TestWindowedMulticlassClassifier(TestTextMulticlassClassifier):
+    """The same contract with windowing on.
+
+    One class for the document out of one class per window, which is the
+    part of this head windowing can break.
+    """
+
+    @pytest.fixture
+    def model(self, tokenizer, monkeypatch):
+        instance = self._build(tokenizer, monkeypatch)
+        instance.window = 8
+        instance.window_overlap = 2
+        instance.window_aggregation = "mean"
+        return instance
 
 
 class TestTextSpanTagger(_TextContract):

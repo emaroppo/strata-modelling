@@ -107,9 +107,8 @@ class ModelContract:
                     seen.append(name)
         return seen or ["alpha"]
 
-    #: The plainest label set of each task — no options declared, which is
-    #: what every label set means before anyone says otherwise. A model
-    #: refusing this one could not be trained at all.
+    #: The plainest label set of each task — nothing declared on it, which
+    #: is what a label set means before anyone says otherwise.
     SCHEMA_TYPES: dict[str, type] = {
         "classification": ClassificationSchema,
         "span": SpanSchema,
@@ -118,6 +117,13 @@ class ModelContract:
 
     @pytest.fixture
     def schema(self, model, classes):
+        """A label set this model is meant to be trained on.
+
+        Defaults to the plainest one of its task. **Override it** where a
+        model exists precisely to serve a label set that declares something
+        — a single-label classifier, a tagger for overlapping spans — since
+        the default is then one it is right to refuse.
+        """
         task = type(model).task
         if task not in self.SCHEMA_TYPES:
             raise AssertionError(
@@ -151,13 +157,13 @@ class ModelContract:
         # A run records this, and warm-starting across a change is refused
         assert isinstance(type(model).version, str) and type(model).version
 
-    def test_it_accepts_the_plainest_label_set_of_its_task(self, model, schema):
-        """A model may refuse a label set, but not the unadorned one.
+    def test_it_accepts_the_label_set_it_is_for(self, model, schema):
+        """A model may refuse a label set, but not the one it exists to serve.
 
         ``requires_schema`` is how a model declines a shape it cannot
-        represent — overlapping spans, a region with two labels. Declining
-        the label set with nothing declared on it means declining every
-        label set, which the task check would not catch.
+        represent — overlapping spans, a region with two labels, several
+        classes at once. Declining every label set of its own task is the
+        thing this catches, and the task check could not.
         """
         model.requires_schema(schema)
 

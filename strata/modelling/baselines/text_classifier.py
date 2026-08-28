@@ -217,6 +217,11 @@ class _TransformerBase(Model):
     #: it has to be told rather than defaulted.
     aggregates_windows: ClassVar[bool] = False
 
+    #: Which combinations this head can actually perform. Narrower for a
+    #: single-label head, where "the union of what the windows asserted" is
+    #: not an answer it is allowed to give.
+    AGGREGATIONS: ClassVar[tuple[str, ...]] = ("max", "mean", "any")
+
     def __init__(
         self,
         encoder: str = DEFAULT_ENCODER,
@@ -256,12 +261,24 @@ class _TransformerBase(Model):
                     f"window_overlap ({window_overlap}) must be smaller than "
                     f"window ({window}), or the windows do not advance."
                 )
+            choices = ", ".join(repr(a) for a in self.AGGREGATIONS)
             if self.aggregates_windows and window_aggregation is None:
                 raise ValueError(
                     f"{type(self).__name__} needs window_aggregation when "
                     f"window is set: several windows produce several answers "
                     f"for one document and they have to be combined. Choose "
-                    f"'max', 'mean' or 'any' — there is no right default."
+                    f"{choices} — there is no right default."
+                )
+            if (
+                window_aggregation is not None
+                and window_aggregation not in self.AGGREGATIONS
+            ):
+                # Here rather than in `_merge`, which does not run until a
+                # document needs combining — a typo would otherwise survive
+                # a whole training run and fail on the first prediction.
+                raise ValueError(
+                    f"{type(self).__name__} cannot combine windows by "
+                    f"{window_aggregation!r}. It takes {choices}."
                 )
         self.encoder = encoder
         self.num_epochs = num_epochs
@@ -297,6 +314,16 @@ class _TransformerBase(Model):
         Only ever called with more than one window when windowing is on.
         """
         return outputs[0]
+
+    def _trainable(self, target) -> bool:
+        """Whether this head can learn anything from a target.
+
+        A head that cannot represent an answer should not be handed it: a
+        single-label classifier given "none of these" has no way to encode
+        that, and encoding it as class zero teaches the wrong thing. Such a
+        sample contributes no windows and is counted instead.
+        """
+        return True
 
     def _decode(self, text: str, logits: torch.Tensor):
         raise NotImplementedError
@@ -369,6 +396,11 @@ class _TransformerBase(Model):
                 return_offsets_mapping=True,
             )
             windows = encoded["offset_mapping"]
+        if target is not None and not self._trainable(target):
+            # No windows, so it contributes no training items — and a count
+            # rather than a silence, because a corpus quietly training on
+            # less than it holds is the whole family of faults this guards.
+            return 0, {"empty_targets": 1}
         return len(windows), self._alignment(target, windows)
 
     def _alignment(self, target, windows) -> dict[str, int]:
@@ -544,6 +576,21 @@ class TextClassifier(_TransformerBase):
     task = "classification"
     version = "1"
 
+    def requires_schema(self, schema) -> None:
+        """A sigmoid head cannot promise to name only one class.
+
+        Every class is scored independently, so this can assert two where
+        the label set permits one — and that lands as a pre-annotation a
+        reviewer has to undo, on a control that will not even display it.
+        The label set already says which it is; nothing read it until now.
+        """
+        if getattr(schema, "multiple", True) is False:
+            raise ValueError(
+                "it is single-choice, and this head scores every class "
+                "independently, so it can assert two at once. Use "
+                "'text-multiclass', whose softmax head names exactly one."
+            )
+
     def _build_model(self, num_labels: int):
         return AutoModelForSequenceClassification.from_pretrained(
             self.encoder,
@@ -617,6 +664,110 @@ class TextClassifier(_TransformerBase):
             values=[self.classes[i] for i in indices],
             confidences=[round(probs[i].item(), 4) for i in indices],
         )
+
+
+class TextMulticlassClassifier(TextClassifier):
+    """Single-label document classification: the classes are exclusive.
+
+    The same encoder, training loop and windowing as
+    :class:`TextClassifier`. Only the loss, the target encoding and the
+    decoding differ, which is exactly the split the image baselines already
+    make between ``MultiLabelClassifier`` and ``MulticlassClassifier``.
+    """
+
+    version: ClassVar[str] = "1"
+
+    #: "any" means the union of what the windows asserted, which is not an
+    #: answer a single-label head is allowed to give.
+    AGGREGATIONS: ClassVar[tuple[str, ...]] = ("max", "mean")
+
+    def requires_schema(self, schema) -> None:
+        """The mirror of the sigmoid head's refusal.
+
+        A softmax head names one class, so a label set expecting several
+        would be trained on the first of them and scored as though the rest
+        had been asked for.
+        """
+        if getattr(schema, "multiple", False) is True:
+            raise ValueError(
+                "it is multi-choice, and this head names exactly one class "
+                "per document, so every other answer would be dropped. Use "
+                "'text', whose sigmoid head scores each class separately."
+            )
+
+    def _trainable(self, target) -> bool:
+        # "None of these" is a real answer and a common one, but it is not
+        # one this head can represent — the argmax always names something.
+        # Counted rather than encoded as class zero, which would teach the
+        # first class every time a reviewer found nothing.
+        return bool(getattr(target, "values", None))
+
+    def _build_model(self, num_labels: int):
+        return AutoModelForSequenceClassification.from_pretrained(
+            self.encoder,
+            num_labels=num_labels,
+            problem_type="single_label_classification",
+            ignore_mismatched_sizes=True,
+        ).to(self.device)
+
+    def _item(self, fields: dict, text: str, offsets, target) -> dict:
+        # A class index rather than a multi-hot row, which is what
+        # cross-entropy takes. Every window of a document carries the
+        # document's class, for the same reason the sigmoid head does.
+        named = [
+            name
+            for name in (target.values if target is not None else [])
+            if name in self.classes
+        ]
+        index = self.classes.index(named[0]) if named else -100
+        return {
+            **fields,
+            # -100 is cross-entropy's ignore index. It is unreachable in
+            # practice — a target with nothing in it contributes no windows
+            # — and is here so that a caller assembling items by hand gets
+            # no supervision rather than the wrong supervision.
+            "labels": torch.tensor(index, dtype=torch.long),
+            "offsets": offsets,
+        }
+
+    def _decode(self, text: str, logits: torch.Tensor, offsets) -> ChoicesPrediction:
+        probs = torch.softmax(logits.float(), dim=-1)
+        index = int(probs.argmax().item())
+        return ChoicesPrediction(
+            values=[self.classes[index]],
+            confidences=[round(probs[index].item(), 4)],
+        )
+
+    def _merge(self, text: str, outputs: list) -> ChoicesPrediction:
+        """One class for the document, from one class per window.
+
+        Note what this can and cannot see: each window has already been
+        decoded to its own winner, so a class that came second everywhere
+        never reaches here. Merging the probability vectors instead would
+        keep it, at the cost of holding every window's logits for every
+        document — and the same limitation applies to the sigmoid head, so
+        the two stay consistent rather than one being quietly cleverer.
+        """
+        if len(outputs) == 1:
+            return outputs[0]
+
+        scores: dict[str, list[float]] = {}
+        for output in outputs:
+            for name, confidence in zip(output.values, output.confidences):
+                scores.setdefault(name, []).append(confidence)
+
+        if self.window_aggregation == "mean":
+            # Divided by every window, not just the ones that named it, so
+            # a class that won once in twenty does not outrank one that won
+            # steadily
+            combined = {
+                name: sum(values) / len(outputs) for name, values in scores.items()
+            }
+        else:
+            combined = {name: max(values) for name, values in scores.items()}
+
+        best = max(combined, key=combined.get)
+        return ChoicesPrediction(values=[best], confidences=[round(combined[best], 4)])
 
 
 class TextSpanTagger(_TransformerBase):

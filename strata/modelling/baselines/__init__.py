@@ -15,6 +15,7 @@ _MODULES: dict[str, str] = {
     "MultiLabelClassifier": "strata.modelling.baselines.classifier",
     "PresenceClassifier": "strata.modelling.baselines.classifier",
     "TextClassifier": "strata.modelling.baselines.text_classifier",
+    "TextMulticlassClassifier": "strata.modelling.baselines.text_classifier",
     "TextSpanTagger": "strata.modelling.baselines.text_classifier",
 }
 
@@ -31,6 +32,7 @@ __all__ = [
     "MultiLabelClassifier",
     "PresenceClassifier",
     "TextClassifier",
+    "TextMulticlassClassifier",
     "TextSpanTagger",
     "extra_hint",
 ]
