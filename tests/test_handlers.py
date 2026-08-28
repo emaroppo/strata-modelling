@@ -14,6 +14,18 @@ from strata.modelling import (
     train,
 )
 
+#: Bolted onto the generated model so it declines a label set whose shape
+#: it cannot represent — the same thing the span tagger does about BIO.
+REFUSES_OVERLAPS = """
+
+def _refuse(self, schema):
+    if getattr(schema, "overlapping", False):
+        raise ValueError("each token gets one tag")
+
+
+CountingModel.requires_schema = _refuse
+"""
+
 # ----------------------------------------------------------------------
 # Training
 # ----------------------------------------------------------------------
@@ -91,6 +103,41 @@ def test_a_model_for_another_task_is_refused(store, dataset_dir):
     )
     with pytest.raises(TrainingError, match="handles 'span'"):
         train(TrainRequest(dataset_dir=root, model=COUNTER), store)
+
+
+def test_a_label_set_shaped_wrong_for_the_model_is_refused(store, dataset_dir):
+    """The finer check the task check cannot make.
+
+    Right task, wrong shape: the model handles spans, and this label set
+    declares overlapping ones. Caught here it is a refusal; caught nowhere,
+    the model trains on a projection of the data and reports a number for
+    the projection.
+    """
+    root = dataset_dir()
+    manifest = json.loads((root / "manifest.json").read_text())
+    manifest["label_schema"] = {
+        "task": "span",
+        "classes": ["cat", "dog"],
+        "overlapping": True,
+    }
+    for sample in manifest["samples"]:
+        if sample["value"] is not None:
+            sample["value"] = {"kind": "spans", "values": []}
+    (root / "manifest.json").write_text(json.dumps(manifest))
+    (root / "counter.py").write_text(
+        (root / "counter.py").read_text().replace(
+            'task = "classification"', 'task = "span"'
+        )
+        + REFUSES_OVERLAPS
+    )
+    with pytest.raises(TrainingError, match="cannot be trained on this label set"):
+        train(TrainRequest(dataset_dir=root, model=COUNTER), store)
+
+
+def test_a_model_with_nothing_to_say_about_the_schema_trains(store, dataset_dir):
+    # The default accepts anything, so a plugin written before the hook
+    # existed keeps working without knowing about it
+    assert train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store).id
 
 
 # ----------------------------------------------------------------------

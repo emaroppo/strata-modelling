@@ -29,7 +29,14 @@ should only ever be imported from a test module.
 
 import pytest
 
-from strata.labels import BoxesPrediction, ChoicesPrediction, SpansPrediction
+from strata.labels import (
+    BBoxSchema,
+    BoxesPrediction,
+    ChoicesPrediction,
+    ClassificationSchema,
+    SpanSchema,
+    SpansPrediction,
+)
 
 from .model import Example, Model
 
@@ -38,11 +45,21 @@ def _class_names(values) -> set[str]:
     """The classes a value asserts, whatever kind of value it is.
 
     A classification target names its classes directly; a span or a box
-    carries one on each labelled thing. Reading ``values`` as class names
+    carries them on each labelled thing. Reading ``values`` as class names
     unconditionally is what made this suite classification-only, and it
     failed as a type error rather than as a contract violation.
+
+    A span carries a *list*, and reading only the first would let a model
+    invent a class in second place and pass the check that exists to stop
+    exactly that.
     """
-    return {v if isinstance(v, str) else v.label for v in values}
+    names: set[str] = set()
+    for value in values:
+        if isinstance(value, str):
+            names.add(value)
+        else:
+            names.update(getattr(value, "labels", None) or [value.label])
+    return names
 
 
 class ModelContract:
@@ -90,6 +107,25 @@ class ModelContract:
                     seen.append(name)
         return seen or ["alpha"]
 
+    #: The plainest label set of each task — no options declared, which is
+    #: what every label set means before anyone says otherwise. A model
+    #: refusing this one could not be trained at all.
+    SCHEMA_TYPES: dict[str, type] = {
+        "classification": ClassificationSchema,
+        "span": SpanSchema,
+        "bbox": BBoxSchema,
+    }
+
+    @pytest.fixture
+    def schema(self, model, classes):
+        task = type(model).task
+        if task not in self.SCHEMA_TYPES:
+            raise AssertionError(
+                f"{type(model).__name__} declares task {task!r}, which names "
+                f"no schema type. Known: {sorted(self.SCHEMA_TYPES)}."
+            )
+        return self.SCHEMA_TYPES[task](classes=list(classes))
+
     @pytest.fixture
     def expected_prediction(self, model) -> type:
         """What this model's task says it must emit."""
@@ -114,6 +150,16 @@ class ModelContract:
     def test_it_declares_a_version(self, model):
         # A run records this, and warm-starting across a change is refused
         assert isinstance(type(model).version, str) and type(model).version
+
+    def test_it_accepts_the_plainest_label_set_of_its_task(self, model, schema):
+        """A model may refuse a label set, but not the unadorned one.
+
+        ``requires_schema`` is how a model declines a shape it cannot
+        represent — overlapping spans, a region with two labels. Declining
+        the label set with nothing declared on it means declining every
+        label set, which the task check would not catch.
+        """
+        model.requires_schema(schema)
 
     # -- training -------------------------------------------------------
 

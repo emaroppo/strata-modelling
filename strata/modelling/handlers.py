@@ -59,6 +59,15 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
         )
 
     model: Model = _construct(model_cls, request.model, request.params)
+    try:
+        model.requires_schema(schema)
+    except ValueError as e:
+        # Before the round rather than during it. A model that cannot
+        # represent this label set's shape would otherwise train on a
+        # projection of it and report a number for the projection.
+        raise TrainingError(
+            f"Model {request.model!r} cannot be trained on this label set: {e}"
+        ) from None
     classes = list(schema.classes)
     parent = _warm_start(model, request, store, classes)
 

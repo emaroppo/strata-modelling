@@ -78,3 +78,32 @@ def test_scores_run_over_many_documents():
     # one hit, one miss, one invention
     assert scores["val_span_precision"] == 0.5
     assert scores["val_span_recall"] == 0.5
+
+
+def test_a_region_with_two_labels_is_two_entities():
+    """Scoring regions rather than entities would flatter a half-right answer.
+
+    The truth marks one phrase as both a name and an organisation; the
+    model found only the name. That is one of two, not one of one.
+    """
+    truth = [[Span(labels=["PER", "ORG"], start=0, end=4)]]
+    predicted = [[Span(labels=["PER"], start=0, end=4)]]
+    scores = span_scores(truth, predicted)
+    assert scores["val_span_recall"] == 0.5
+    # And what it did say, it said correctly
+    assert scores["val_span_precision"] == 1.0
+
+
+def test_per_class_scores_split_a_shared_region():
+    truth = [[Span(labels=["PER", "ORG"], start=0, end=4)]]
+    predicted = [[Span(labels=["PER"], start=0, end=4)]]
+    scores = span_scores(truth, predicted)
+    assert scores["val_span_f1_PER"] == 1.0
+    assert scores["val_span_f1_ORG"] == 0.0
+
+
+def test_a_region_with_no_labels_asserts_nothing():
+    # Not an entity, and counting it as one would invent a class
+    scores = span_scores([[]], [[Span(labels=[], start=0, end=4)]])
+    assert scores["val_span_precision"] == 0.0
+

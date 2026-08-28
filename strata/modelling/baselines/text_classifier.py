@@ -10,6 +10,8 @@ image model does.
 """
 
 import sys
+from bisect import bisect_left, bisect_right
+from collections import Counter
 from pathlib import Path
 from typing import ClassVar
 
@@ -60,8 +62,38 @@ def _prf(true_positive: int, false_positive: int, false_negative: int) -> tuple:
     return precision, recall, f1
 
 
+def _tokens_touching(span, windows) -> list[tuple[int, int]]:
+    """Every token a span overlaps, across each window the document became.
+
+    Bisected rather than scanned: a dense document runs to hundreds of
+    spans over five hundred tokens, and this is asked once per span on
+    every dataset built.
+    """
+    touched: list[tuple[int, int]] = []
+    for window in windows:
+        tokens = [(int(s), int(e)) for s, e in window if not (s == 0 and e == 0)]
+        if not tokens:
+            continue
+        starts = [s for s, _ in tokens]
+        ends = [e for _, e in tokens]
+        # First token reaching past the span's start, up to the first one
+        # starting at or after its end
+        touched.extend(tokens[bisect_right(ends, span.start) : bisect_left(starts, span.end)])
+    return touched
+
+
+def _entities(spans: list) -> list[tuple[str, int, int]]:
+    """One entity per label a region carries.
+
+    A region marked both PER and ORG asserts two things, and counting it
+    once would be scoring regions rather than entities — which is not what
+    anyone reads an F1 as.
+    """
+    return [(label, s.start, s.end) for s in spans for label in s.labels]
+
+
 def _overlap_matches(predicted: list, truth: list) -> int:
-    """Predicted spans that overlap a true span of the same label, paired off.
+    """Predicted entities overlapping a true one of the same label, paired off.
 
     One-to-one on purpose: without it, a model emitting one span across a
     whole sentence would "match" every entity in it and score perfectly for
@@ -69,13 +101,9 @@ def _overlap_matches(predicted: list, truth: list) -> int:
     """
     unmatched = list(truth)
     matched = 0
-    for span in predicted:
-        for i, other in enumerate(unmatched):
-            if (
-                span.label == other.label
-                and span.start < other.end
-                and other.start < span.end
-            ):
+    for label, start, end in predicted:
+        for i, (other_label, other_start, other_end) in enumerate(unmatched):
+            if label == other_label and start < other_end and other_start < end:
                 del unmatched[i]
                 matched += 1
                 break
@@ -105,12 +133,12 @@ def span_scores(truth: list, predicted: list) -> dict[str, float]:
     per_class: dict[str, list[int]] = {}
 
     for wanted, got in zip(truth, predicted):
-        wanted_keys = {(s.label, s.start, s.end) for s in wanted}
-        got_keys = {(s.label, s.start, s.end) for s in got}
+        wanted_keys = set(_entities(wanted))
+        got_keys = set(_entities(got))
         exact_tp += len(wanted_keys & got_keys)
         exact_fp += len(got_keys - wanted_keys)
         exact_fn += len(wanted_keys - got_keys)
-        partial_tp += _overlap_matches(list(got), list(wanted))
+        partial_tp += _overlap_matches(_entities(got), _entities(wanted))
 
         for label in {k[0] for k in wanted_keys | got_keys}:
             w = {k for k in wanted_keys if k[0] == label}
@@ -154,14 +182,19 @@ class _TextDataset(Dataset):
     always had.
     """
 
-    def __init__(self, samples: list[Example], encode, count):
+    def __init__(self, samples: list[Example], encode, scan):
         self.samples = samples
         self.encode = encode
-        self.index: list[tuple[int, int]] = [
-            (i, w)
-            for i, sample in enumerate(samples)
-            for w in range(count(_read_text(sample.path)))
-        ]
+        self.index: list[tuple[int, int]] = []
+        #: What was noticed while counting windows — supervision a target
+        #: loses on the way in. Collected here because this is the one pass
+        #: that already tokenises every document, and a second one over a
+        #: corpus this size is not free.
+        self.diagnostics: Counter = Counter()
+        for i, sample in enumerate(samples):
+            windows, noticed = scan(_read_text(sample.path), sample.target)
+            self.index.extend((i, w) for w in range(windows))
+            self.diagnostics.update(noticed)
 
     def __len__(self) -> int:
         return len(self.index)
@@ -311,17 +344,36 @@ class _TransformerBase(Model):
             for i in range(len(offsets))
         ]
 
-    def _window_count(self, text: str) -> int:
+    def _scan(self, text: str, target) -> tuple[int, dict[str, int]]:
+        """How many windows this document needs, and what it loses on the way in.
+
+        One tokenisation answering both, because the dataset already pays
+        for one per document and the alignment question needs exactly what
+        it produces.
+        """
         if self.window is None:
-            return 1
-        encoded = self.tokenizer(
-            text,
-            truncation=True,
-            max_length=self.window,
-            stride=self.window_overlap,
-            return_overflowing_tokens=True,
-        )
-        return len(encoded["input_ids"])
+            encoded = self.tokenizer(
+                text,
+                truncation=True,
+                max_length=self.MAX_LENGTH,
+                return_offsets_mapping=True,
+            )
+            windows = [encoded["offset_mapping"]]
+        else:
+            encoded = self.tokenizer(
+                text,
+                truncation=True,
+                max_length=self.window,
+                stride=self.window_overlap,
+                return_overflowing_tokens=True,
+                return_offsets_mapping=True,
+            )
+            windows = encoded["offset_mapping"]
+        return len(windows), self._alignment(target, windows)
+
+    def _alignment(self, target, windows) -> dict[str, int]:
+        """What this head loses aligning a target to tokens. Nothing, by default."""
+        return {}
 
     def _prepare(self, classes: list[str]) -> None:
         """Keep the fine-tuned weights when the class list only grew."""
@@ -356,8 +408,9 @@ class _TransformerBase(Model):
         on_epoch=None,
     ) -> dict:
         self._prepare(classes)
+        dataset = _TextDataset(train, self._encode, self._scan)
         loader = DataLoader(
-            _TextDataset(train, self._encode, self._window_count),
+            dataset,
             batch_size=self.batch_size,
             shuffle=True,
             collate_fn=self._collate,
@@ -398,13 +451,17 @@ class _TransformerBase(Model):
                     progress.update(task, advance=1, loss=total_loss / max(seen, 1))
 
         metrics = {"loss": total_loss / max(seen, 1)}
+        # What the training set lost on the way in, recorded on the run.
+        # A model that will not learn a class is otherwise indistinguishable
+        # from a class it was never actually taught.
+        metrics.update({f"train_{k}": v for k, v in dataset.diagnostics.items()})
         if val:
             metrics.update(self._evaluate(val))
         return metrics
 
     def _evaluate(self, samples: list[dict]) -> dict:
         loader = DataLoader(
-            _TextDataset(samples, self._encode, self._window_count),
+            _TextDataset(samples, self._encode, self._scan),
             batch_size=self.batch_size,
             shuffle=False,
             collate_fn=self._collate,
@@ -583,6 +640,60 @@ class TextSpanTagger(_TransformerBase):
             self.encoder, num_labels=num_labels, ignore_mismatched_sizes=True
         ).to(self.device)
 
+    def requires_schema(self, schema) -> None:
+        """What BIO cannot say, refused before a round rather than during it.
+
+        A tag per token means one thing per token. A region carrying two
+        labels loses the second; the later of two overlapping regions
+        overwrites the earlier. Either way the model trains on a projection
+        of the label set and is scored as though it had learned the whole
+        thing — the metric is the last place that failure would show.
+        """
+        cannot = []
+        if getattr(schema, "overlapping", False):
+            cannot.append("overlapping regions")
+        if getattr(schema, "multi_label", False):
+            cannot.append("regions carrying more than one label")
+        if cannot:
+            raise ValueError(
+                f"it declares {' and '.join(cannot)}, and BIO tagging gives each "
+                f"token exactly one tag. Learning these needs a tagger with one "
+                f"binary B/I/O head per class, which is not what this is."
+            )
+
+    def _alignment(self, target, windows) -> dict[str, int]:
+        """What this document's spans lose against the tokenizer.
+
+        Two counts, both otherwise silent, and they read differently.
+
+        ``spans_unaligned`` is supervision that never happened: the span
+        reached no token at all, so nothing in the document taught the model
+        that class. It looks afterwards exactly like a class the model
+        cannot learn.
+
+        ``spans_inexact`` is a span whose characters do not sit on token
+        boundaries. It trains, but decoding snaps back to whole tokens, so
+        the model cannot reproduce the human's range — which is a gap
+        between exact and partial F1 rather than a bug, and is much easier
+        to read as one when the count is on the run beside it.
+        """
+        spans = [
+            span
+            for span in (target.values if target is not None else [])
+            if span.label in self.classes
+        ]
+        unaligned = inexact = 0
+        for span in spans:
+            touched = _tokens_touching(span, windows)
+            if not touched:
+                unaligned += 1
+            elif (
+                min(start for start, _ in touched) != span.start
+                or max(end for _, end in touched) != span.end
+            ):
+                inexact += 1
+        return {"spans_unaligned": unaligned, "spans_inexact": inexact}
+
     def _tag_ids(self, class_name: str) -> tuple[int, int]:
         i = self.classes.index(class_name)
         return 1 + 2 * i, 2 + 2 * i  # B, I
@@ -601,7 +712,11 @@ class TextSpanTagger(_TransformerBase):
             for t, (start, end) in enumerate(offsets.tolist()):
                 if start == end == 0:
                     continue
-                if start >= span.start and end <= span.end:
+                # Overlap, not containment. A span whose characters cut a
+                # token — "USA" inside "USA-based" — used to land on no
+                # token at all and supervise nothing, which reads later as
+                # a class the model simply will not learn.
+                if start < span.end and end > span.start:
                     labels[t] = begin if first else inside
                     first = False
         item["labels"] = labels
