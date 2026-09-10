@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from counting_model import COUNTER, COUNTING_MODEL
 
-from strata.labels import ChoicesPrediction
+from strata.labels import MANIFEST_FORMAT, ChoicesPrediction
 from strata.modelling import RunStore
 
 
@@ -60,6 +60,7 @@ def dataset_dir(tmp_path):
         (root / "manifest.json").write_text(
             json.dumps(
                 {
+                    "format": MANIFEST_FORMAT,
                     "dataset": name,
                     "version": version,
                     "label_set": "presence",

@@ -29,7 +29,7 @@ caller's business, and doing it here would put the catalog back into it.
 because a prediction is a function of a checkpoint and some bytes.
 """
 
-from .handlers import TrainingError, predict, train
+from .handlers import TrainingError, examples, predict, train
 from .merge import StoreMergeError, StoreMergeReport, merge_stores
 from .model import Example, Model
 from .predictions import PredictionCache
@@ -53,6 +53,7 @@ __all__ = [
     "TrainRequest",
     "TrainingError",
     "available",
+    "examples",
     "predict",
     "resolve",
     "train",

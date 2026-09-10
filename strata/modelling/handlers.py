@@ -7,26 +7,17 @@ works on a laptop and 400s against the GPU host cannot arise.
 """
 
 import inspect
-import json
 from pathlib import Path
 
-from pydantic import TypeAdapter
 from sqlalchemy import update
 
-from strata.labels import MANIFEST_NAME, AnySchema, AnyValue
+from strata.labels import MANIFEST_NAME, Manifest, ManifestFormatError
 
 from . import tables as t
 from .model import Example, Model
 from .registry import ModelError, absolute, resolve
 from .requests import PredictRequest, Run, ScoredPath, TrainRequest
 from .runs import RunStore
-
-_SCHEMA = TypeAdapter(AnySchema)
-#: Manifest values are whatever the label set stores — choices, spans,
-#: boxes. Validating them as one concrete type instead reads every other
-#: kind as a validation error, which is what made training a span or bbox
-#: dataset impossible: the union is the only thing that admits all three.
-_VALUE = TypeAdapter(AnyValue)
 
 
 class TrainingError(Exception):
@@ -36,7 +27,7 @@ class TrainingError(Exception):
 def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
     """Train from a materialised dataset and record the run."""
     manifest = _read_manifest(request.dataset_dir)
-    schema = _SCHEMA.validate_python(manifest["label_schema"])
+    schema = manifest.label_schema
     model_cls = resolve(request.model, root=request.dataset_dir)
 
     if model_cls.task != schema.task:
@@ -56,7 +47,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
             f"Either declare it, or use a model without an implicit negative class."
         )
 
-    declared = {f.get("name") for f in manifest.get("features") or ()}
+    declared = {f.get("name") for f in manifest.features}
     unmet = [f for f in model_cls.requires_features if f not in declared]
     if unmet:
         # Before the round rather than during it, the same as an undeclared
@@ -82,7 +73,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
     classes = list(schema.classes)
     parent = _warm_start(model, request, store, classes)
 
-    train_examples, val_examples = _examples(request.dataset_dir, manifest)
+    train_examples, val_examples = examples(request.dataset_dir, manifest)
     if not train_examples:
         raise TrainingError(f"{request.dataset_dir} has no training samples")
 
@@ -105,13 +96,13 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
             # Minted by the store, where the run happened
             id="",
             parent_run_id=parent.id if parent else None,
-            dataset=manifest["dataset"],
-            dataset_version=manifest["version"],
+            dataset=manifest.dataset,
+            dataset_version=manifest.version,
             # From the manifest rather than the request: the directory is
             # the record of what was trained on, and it is the only thing
             # both the local and the remote path have in common
-            catalog_id=manifest.get("catalog_id"),
-            label_set=manifest["label_set"],
+            catalog_id=manifest.catalog_id,
+            label_set=manifest.label_set,
             # Anchored, so predicting or warm-starting from this run later
             # does not depend on the dataset directory still being there
             model=absolute(request.model, request.dataset_dir),
@@ -175,30 +166,43 @@ def _construct(model_cls: type[Model], name: str, params: dict) -> Model:
         ) from exc
 
 
-def _read_manifest(directory: Path) -> dict:
+def _read_manifest(directory: Path) -> Manifest:
     path = Path(directory) / MANIFEST_NAME
     if not path.exists():
         raise TrainingError(f"No {MANIFEST_NAME} in {directory}")
-    return json.loads(path.read_text())
+    try:
+        return Manifest.model_validate_json(path.read_text())
+    except ManifestFormatError as e:
+        # Refused rather than rebuilt: the core holds a directory, not a
+        # catalog, so it has nowhere to fetch a fresh copy from. Whoever
+        # handed it the directory does.
+        raise TrainingError(f"{directory}: {e}") from None
 
 
-def _examples(directory: Path, manifest: dict) -> tuple[list[Example], list[Example]]:
+def examples(directory: Path, manifest: Manifest) -> tuple[list[Example], list[Example]]:
+    """What a model is handed from a materialised dataset: training, then validation.
+
+    Read through the manifest's own definition rather than by key name, so
+    a field the writer renamed fails here instead of arriving as nothing.
+    Public because the label-type conformance suite drives a value through
+    it — the last layer between a reviewer's answer and a model.
+    """
     train_examples, val_examples = [], []
-    for sample in manifest["samples"]:
-        if sample.get("value") is None:
+    for sample in manifest.samples:
+        if sample.value is None:
             # Skipped: reviewed, nothing applicable, not training data
             continue
-        if sample["split"] == "holdout":
+        if sample.split == "holdout":
             # Kept back to measure what training and selection never saw. A
             # model shown it — even as validation, even once — is a model it
             # can no longer measure honestly.
             continue
         example = Example(
-            path=Path(directory) / sample["path"],
-            target=_VALUE.validate_python(sample["value"]),
-            features=sample.get("features") or {},
+            path=Path(directory) / sample.path,
+            target=sample.value,
+            features=sample.features,
         )
-        (val_examples if sample["split"] == "val" else train_examples).append(example)
+        (val_examples if sample.split == "val" else train_examples).append(example)
     return train_examples, val_examples
 
 

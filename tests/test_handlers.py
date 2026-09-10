@@ -109,6 +109,16 @@ def test_a_missing_manifest_is_an_error(store, tmp_path):
         train(TrainRequest(dataset_dir=tmp_path, model=COUNTER), store)
 
 
+def test_a_manifest_this_release_cannot_read_is_refused(store, dataset_dir):
+    """The core holds a directory, not a catalog: it cannot fetch a fresh copy, so it says why."""
+    root = dataset_dir()
+    manifest = json.loads((root / "manifest.json").read_text())
+    manifest["format"] = 2
+    (root / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(TrainingError, match="format 2"):
+        train(TrainRequest(dataset_dir=root, model=COUNTER), store)
+
+
 def test_a_dataset_with_no_training_samples_is_an_error(store, dataset_dir):
     with pytest.raises(TrainingError, match="no training samples"):
         train(TrainRequest(dataset_dir=dataset_dir(n_train=0, n_val=2), model=COUNTER), store)
