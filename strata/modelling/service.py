@@ -28,6 +28,14 @@ nothing: the work carries on here, and the job is still there to ask about.
 One round at a time, refused rather than queued. A second training job on
 one GPU does not run slower, it runs out of memory and takes the first one
 with it.
+
+**Both sides speak one protocol.** The laptop and this host are separate
+releases once the packages are, and a field one side added and the other
+ignores fails silently — which is how remote rounds would have dropped
+features. So ``/healthz`` states :data:`PROTOCOL`, the laptop checks it
+before sending anything, and every other request names it or is refused.
+The number goes up only when an older side would misread a newer one; a
+field added with a default does not need it.
 """
 
 import os
@@ -44,6 +52,11 @@ from .registry import available
 from .requests import PredictRequest, Run, TrainRequest
 from .runs import RunStore
 
+#: What this release says over the wire. See the module docstring.
+PROTOCOL = 1
+#: The header every request but ``/healthz`` names it in.
+PROTOCOL_HEADER = "X-Strata-Protocol"
+
 
 class ServiceError(Exception):
     """A request this host cannot honour."""
@@ -56,6 +69,13 @@ class RoundRequest(BaseModel):
     #: is already frozen — the caller made it — so two hosts materialising
     #: the same id get the same bytes.
     dataset_id: int
+    #: What the caller means by that id: the name, version and digest its
+    #: own catalog gave. Checked against this host's catalog, because a copy
+    #: of a catalog keeps the identity and numbers its datasets on its own.
+    #: See :func:`check_dataset`.
+    dataset_name: str
+    dataset_version: int
+    annotation_digest: str | None
     #: A registered short name. File references are refused: see
     #: :func:`check_servable`.
     model: str
@@ -70,9 +90,10 @@ class RoundRequest(BaseModel):
     #: Which catalog the caller believes this host serves. A dataset id is
     #: an integer meaningful only within one, so if the host is on another
     #: catalog the same id names different samples — and the round would
-    #: succeed, silently, over the wrong data. Optional so an older client
-    #: still works; checked when given.
-    catalog_id: str | None = None
+    #: succeed, silently, over the wrong data. Required: every catalog has
+    #: an identity, and a client too old to send one is turned away by the
+    #: protocol check before it gets here.
+    catalog_id: str
 
 
 class RoundResponse(BaseModel):
@@ -193,22 +214,52 @@ class CatalogMismatch(ServiceError):
     """A round prepared against one catalog, submitted to a host on another."""
 
 
-def check_catalog(requested: str | None, serving: str | None) -> None:
+class DatasetMismatch(ServiceError):
+    """A dataset id that names other data here than where the round was prepared."""
+
+
+def check_catalog(requested: str, serving: str) -> None:
     """Refuse a round prepared against a different catalog.
 
     ``dataset_id`` is an integer, and integers are only meaningful within
     one catalog: submitted to a host serving another, the same id names
     different samples and the round trains on the wrong data without
-    failing. Silence on either side is tolerated so an older client and a
-    catalog predating identities both still work.
+    failing.
     """
-    if requested is None or serving is None or requested == serving:
+    if requested == serving:
         return
     raise CatalogMismatch(
         f"This host serves catalog {serving}, and the round was prepared "
         f"against {requested}. A dataset id names different samples in "
         f"each, so training it here would train on the wrong data."
     )
+
+
+def check_dataset(request: RoundRequest, found) -> None:
+    """Refuse a round whose dataset id names something else in this catalog.
+
+    The catalog check is not enough alone. A copy of a catalog keeps its
+    identity — that is what lets its answers be merged back — and numbers
+    its datasets on its own, so dataset 12 on a laptop working from a copy
+    and dataset 12 here can be different data with the catalog check
+    passing. The round says what it means by the id; this checks that it
+    means the same here. ``found`` is what this host's catalog says the id
+    is, a :class:`~strata.catalog.DatasetRef`.
+    """
+    if (request.dataset_name, request.dataset_version) != (found.name, found.version):
+        raise DatasetMismatch(
+            f"Dataset {request.dataset_id} is {found.name} v{found.version} in this "
+            f"host's catalog, and the round was prepared for {request.dataset_name} "
+            f"v{request.dataset_version}. A copy of a catalog numbers its datasets on "
+            f"its own, so the same id can name different data in each. Freeze the "
+            f"dataset in the catalog this host reads, or merge the copy back first."
+        )
+    if request.annotation_digest != found.annotation_digest:
+        raise DatasetMismatch(
+            f"{found.name} v{found.version} has different answers in this host's "
+            f"catalog than where the round was prepared — a copy labelled since it "
+            f"was taken. Merge it back and freeze the dataset again."
+        )
 
 
 def check_servable(model: str) -> None:
@@ -249,6 +300,7 @@ def run_round(
     check_servable(request.model)
 
     check_catalog(request.catalog_id, catalog.id)
+    check_dataset(request, catalog.dataset_named(request.dataset_id))
 
     def tick(done: int, total: int) -> None:
         if report is not None:
@@ -379,7 +431,7 @@ def build():
     """The app, from the environment. Raises if anything essential is absent."""
     from fastapi import Depends, FastAPI, Header, HTTPException
 
-    from strata.catalog import Catalog
+    from strata.catalog import Catalog, CatalogError
 
     token = _required(
         "STRATA_MODELLING_TOKEN",
@@ -437,6 +489,19 @@ def build():
         if not hmac.compare_digest(offered, token):
             raise HTTPException(status_code=403, detail="Bad or missing token.")
 
+    def spoken(x_strata_protocol: str = Header(default="")) -> None:
+        # 426: the request is well formed, and needs a matching release to
+        # be understood. Checked on every call rather than once, because a
+        # laptop can be upgraded, or downgraded, between two of them.
+        if x_strata_protocol != str(PROTOCOL):
+            asked = f"is protocol {x_strata_protocol}" if x_strata_protocol else "names none"
+            raise HTTPException(
+                status_code=426,
+                detail=f"This host speaks protocol {PROTOCOL}, and the request {asked}. "
+                f"The laptop and this host must run matching releases: upgrade "
+                f"whichever is older.",
+            )
+
     served: dict[str, str | None] = {}
 
     def served_catalog_id() -> str | None:
@@ -455,20 +520,27 @@ def build():
 
     @app.get("/healthz")
     def healthz() -> dict:
-        return {"ok": True}
+        # Unauthenticated, so a laptop can check it speaks this host's
+        # protocol before sending anything at all
+        return {"ok": True, "protocol": PROTOCOL}
 
-    @app.get("/models", dependencies=[Depends(authorise)])
+    @app.get("/models", dependencies=[Depends(authorise), Depends(spoken)])
     def models() -> dict:
         """What this host can serve, read from what is installed."""
         return {"models": available()}
 
-    @app.post("/round", dependencies=[Depends(authorise)], status_code=202)
+    @app.post("/round", dependencies=[Depends(authorise), Depends(spoken)], status_code=202)
     def round_(request: RoundRequest) -> Job:
         """Accept a round and return the job. It runs after this responds."""
         try:
             # Before accepting, not inside the job: a caller that gets a 202
             # for a round which cannot run learns nothing until it polls
             check_catalog(request.catalog_id, served_catalog_id())
+            try:
+                found = catalog_for().dataset_named(request.dataset_id)
+            except CatalogError as e:
+                raise ServiceError(str(e)) from None
+            check_dataset(request, found)
             return jobs.submit(request)
         except BusyError as e:
             # 409 rather than 400: the request is fine, the host is not free
@@ -476,7 +548,7 @@ def build():
         except ServiceError as e:
             raise HTTPException(status_code=400, detail=str(e)) from None
 
-    @app.post("/predict", dependencies=[Depends(authorise)], status_code=202)
+    @app.post("/predict", dependencies=[Depends(authorise), Depends(spoken)], status_code=202)
     def predict_(request: PredictionRequest) -> Job:
         """Accept a scoring job. Same queue as training: both need the GPU."""
         if cache is None:
@@ -496,7 +568,7 @@ def build():
         except ServiceError as e:
             raise HTTPException(status_code=400, detail=str(e)) from None
 
-    @app.get("/jobs/{job_id}", dependencies=[Depends(authorise)])
+    @app.get("/jobs/{job_id}", dependencies=[Depends(authorise), Depends(spoken)])
     def get_job(job_id: str) -> Job:
         job = jobs.get(job_id)
         if job is None:
@@ -509,7 +581,7 @@ def build():
             )
         return job
 
-    @app.get("/runs/latest", dependencies=[Depends(authorise)])
+    @app.get("/runs/latest", dependencies=[Depends(authorise), Depends(spoken)])
     def latest_run(dataset: str, catalog: str | None = None) -> dict:
         """The newest run over a dataset, in this host's numbering.
 
@@ -522,7 +594,7 @@ def build():
             raise HTTPException(status_code=404, detail=f"No runs over {dataset!r} here")
         return {"run": run.model_dump(mode="json"), "metrics": _metrics_of(store, run.id)}
 
-    @app.get("/runs/{run_id}", dependencies=[Depends(authorise)])
+    @app.get("/runs/{run_id}", dependencies=[Depends(authorise), Depends(spoken)])
     def get_run(run_id: str) -> dict:
         run = store.get(run_id)
         if run is None:

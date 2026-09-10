@@ -91,9 +91,13 @@ def test_agreement_passes():
     check_catalog(A, A)
 
 
-def test_silence_on_either_side_is_tolerated():
-    # An older client sends nothing; a catalog made before identities has
-    # nothing to send. Refusing either would break an upgrade in one
-    # direction only, which is the worst of the options.
-    check_catalog(None, B)
-    check_catalog(A, None)
+def test_a_round_naming_no_catalog_is_refused():
+    """Tolerated once, for clients and catalogs older than identities.
+
+    Every catalog has one now — minted the first time it is opened — and a
+    client too old to send one is refused by the protocol check before a
+    round gets this far. Tolerating silence would only let through a round
+    nobody can say is on the right data.
+    """
+    with pytest.raises(CatalogMismatch):
+        check_catalog(None, B)

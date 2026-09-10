@@ -9,8 +9,12 @@ import threading
 import time
 
 import pytest
+from pydantic import ValidationError
 
+from strata.catalog import DatasetRef
 from strata.modelling.service import (
+    PROTOCOL,
+    PROTOCOL_HEADER,
     RoundRequest,
     ServiceError,
     check_servable,
@@ -69,7 +73,7 @@ class FakeCatalog:
         self.materialised = 0
 
     def dataset_named(self, dataset_id):
-        return self.name, self.version
+        return DatasetRef(self.name, self.version, None)
 
     def materialise(self, dataset_id, dest, on_progress=None, cache=None, features=None):
         self.materialised += 1
@@ -77,6 +81,23 @@ class FakeCatalog:
         if on_progress is not None:
             on_progress(2, 2)
         return dest
+
+
+CATALOG_ID = "20260101T000000-aaaaaaaa"
+
+
+def _round(**overrides) -> RoundRequest:
+    """A round as the laptop would ask for one, for the fake catalog's dataset."""
+    fields = {
+        "dataset_id": 1,
+        "dataset_name": "d",
+        "dataset_version": 2,
+        "annotation_digest": None,
+        "catalog_id": CATALOG_ID,
+        "model": "stub",
+    }
+    fields.update(overrides)
+    return RoundRequest(**fields)
 
 
 @pytest.fixture
@@ -166,7 +187,7 @@ def test_a_version_already_present_is_not_materialised_again(
     fixture_dataset(datasets / "d" / "v002")
 
     result = run_round(
-        RoundRequest(dataset_id=1, model="stub"),
+        _round(),
         catalog,
         RunStore.local(tmp_path / "runs"),
         datasets,
@@ -184,7 +205,7 @@ def test_a_missing_version_is_materialised(tmp_path, fixture_dataset, stub_train
     datasets = tmp_path / "datasets"
 
     result = run_round(
-        RoundRequest(dataset_id=1, model="stub"),
+        _round(),
         catalog,
         RunStore.local(tmp_path / "runs"),
         datasets,
@@ -215,7 +236,7 @@ def test_a_manifest_from_before_formats_is_rebuilt(tmp_path, fixture_dataset, st
     (stale / "manifest.json").write_text(json.dumps(written))
 
     run_round(
-        RoundRequest(dataset_id=1, model="stub"),
+        _round(),
         catalog,
         RunStore.local(tmp_path / "runs"),
         datasets,
@@ -242,7 +263,7 @@ def test_another_catalogs_folder_of_the_same_name_is_rebuilt(
     fixture_dataset(datasets / "d" / "v002")
 
     run_round(
-        RoundRequest(dataset_id=1, model="stub"),
+        _round(catalog_id="20270101T000000-bbbbbbbb"),
         catalog,
         RunStore.local(tmp_path / "runs"),
         datasets,
@@ -260,12 +281,12 @@ def test_the_parent_is_chosen_where_the_checkpoints_are(
     store = RunStore.local(tmp_path / "runs")
     datasets = tmp_path / "datasets"
 
-    first = run_round(RoundRequest(dataset_id=1, model="stub"), catalog, store, datasets)
+    first = run_round(_round(), catalog, store, datasets)
     assert stub_training["request"].parent_run_id is None
 
     # The caller never names a parent: only the host holding checkpoints can
     # pick one, or check that the one picked exists
-    run_round(RoundRequest(dataset_id=1, model="stub"), catalog, store, datasets)
+    run_round(_round(), catalog, store, datasets)
     assert stub_training["request"].parent_run_id == first.run.id
 
 
@@ -278,8 +299,8 @@ def test_fresh_ignores_what_this_host_trained_before(
     store = RunStore.local(tmp_path / "runs")
     datasets = tmp_path / "datasets"
 
-    run_round(RoundRequest(dataset_id=1, model="stub"), catalog, store, datasets)
-    run_round(RoundRequest(dataset_id=1, model="stub", fresh=True), catalog, store, datasets)
+    run_round(_round(), catalog, store, datasets)
+    run_round(_round(fresh=True), catalog, store, datasets)
     assert stub_training["request"].parent_run_id is None
 
 
@@ -291,7 +312,7 @@ def test_a_file_reference_is_refused_before_anything_is_fetched(tmp_path, fixtur
 
     with pytest.raises(ServiceError):
         run_round(
-            RoundRequest(dataset_id=1, model="model.py:Custom"),
+            _round(model="model.py:Custom"),
             catalog,
             store,
             tmp_path / "datasets",
@@ -319,7 +340,7 @@ def test_a_round_is_accepted_and_then_run():
         return "done-ish"
 
     jobs = Jobs(runner)
-    job = jobs.submit(RoundRequest(dataset_id=1, model="stub"))
+    job = jobs.submit(_round())
 
     # The point of submitting: this returned before the work did
     assert started.wait(2)
@@ -339,11 +360,11 @@ def test_a_second_round_is_refused_while_one_runs():
 
     release = threading.Event()
     jobs = Jobs(lambda request, progress: release.wait(2))
-    first = jobs.submit(RoundRequest(dataset_id=1, model="stub"))
+    first = jobs.submit(_round())
 
     # Two training jobs on one GPU do not run slower, they run out of memory
     with pytest.raises(BusyError, match=first.id):
-        jobs.submit(RoundRequest(dataset_id=2, model="stub"))
+        jobs.submit(_round(dataset_id=2))
     release.set()
 
 
@@ -354,7 +375,7 @@ def test_a_failed_round_keeps_its_reason():
         raise RuntimeError("CUDA out of memory")
 
     jobs = Jobs(explode)
-    job = jobs.submit(RoundRequest(dataset_id=1, model="stub"))
+    job = jobs.submit(_round())
     for _ in range(100):
         if jobs.get(job.id).finished:
             break
@@ -372,7 +393,7 @@ def test_an_unservable_model_is_refused_at_submission():
     # Before a thread starts, so a caller learns immediately rather than by
     # polling a job that was never going to run
     with pytest.raises(ServiceError, match="entry point"):
-        jobs.submit(RoundRequest(dataset_id=1, model="model.py:Custom"))
+        jobs.submit(_round(model="model.py:Custom"))
 
 
 def test_the_stage_advances_past_materialising(tmp_path, fixture_dataset, stub_training):
@@ -386,7 +407,7 @@ def test_the_stage_advances_past_materialising(tmp_path, fixture_dataset, stub_t
 
     stages = []
     run_round(
-        RoundRequest(dataset_id=1, model="stub"),
+        _round(),
         FakeCatalog("d", 2, fixture_dataset),
         RunStore.local(tmp_path / "runs"),
         tmp_path / "datasets",
@@ -412,7 +433,7 @@ def test_a_job_says_what_it_is_doing():
         return "result"
 
     jobs = Jobs(runner)
-    job = jobs.submit(RoundRequest(dataset_id=1, model="stub"))
+    job = jobs.submit(_round())
     for _ in range(100):
         if jobs.get(job.id).stage == "training":
             break
@@ -532,8 +553,8 @@ def test_a_cold_round_takes_the_fresh_params_whatever_was_asked(
     catalog = FakeCatalog("d", 2, fixture_dataset)
     store = RunStore.local(tmp_path / "runs")
     datasets = tmp_path / "datasets"
-    request = RoundRequest(
-        dataset_id=1, model="stub", params={"num_epochs": 4}, fresh_params={"num_epochs": 8}
+    request = _round(
+        params={"num_epochs": 4}, fresh_params={"num_epochs": 8}
     )
 
     run_round(request, catalog, store, datasets)
@@ -542,3 +563,144 @@ def test_a_cold_round_takes_the_fresh_params_whatever_was_asked(
     # And the second, which has something to continue, takes the increment's
     run_round(request, catalog, store, datasets)
     assert stub_training["request"].params == {"num_epochs": 4}
+
+
+# ----------------------------------------------------------------------
+# What a round must say, and what it is checked against
+# ----------------------------------------------------------------------
+
+
+def test_a_round_must_say_which_catalog_it_was_prepared_against():
+    """Every catalog has an identity, so a round naming none is a client too old."""
+    with pytest.raises(ValidationError, match="catalog_id"):
+        RoundRequest(
+            dataset_id=1,
+            dataset_name="d",
+            dataset_version=2,
+            annotation_digest=None,
+            model="stub",
+        )
+
+
+def test_a_round_for_another_catalog_is_refused_before_anything_is_fetched(
+    tmp_path, fixture_dataset
+):
+    from strata.modelling import RunStore
+
+    catalog = FakeCatalog("d", 2, fixture_dataset)
+    with pytest.raises(ServiceError, match="serves catalog"):
+        run_round(
+            _round(catalog_id="20250101T000000-cccccccc"),
+            catalog,
+            RunStore.local(tmp_path / "runs"),
+            tmp_path / "datasets",
+        )
+    assert catalog.materialised == 0
+
+
+def test_an_id_that_names_another_dataset_here_is_refused(tmp_path, fixture_dataset):
+    """A laptop working on a copy of the catalog.
+
+    The copy keeps the catalog's identity, so the catalog check passes, and
+    numbers its datasets on its own — so its dataset 1 and this host's
+    dataset 1 can be different data.
+    """
+    from strata.modelling import RunStore
+
+    catalog = FakeCatalog("d", 2, fixture_dataset)
+    with pytest.raises(ServiceError, match=r"d v2 .* other v5"):
+        run_round(
+            _round(dataset_name="other", dataset_version=5),
+            catalog,
+            RunStore.local(tmp_path / "runs"),
+            tmp_path / "datasets",
+        )
+    assert catalog.materialised == 0
+
+
+def test_the_same_version_with_other_answers_is_refused(tmp_path, fixture_dataset):
+    from strata.modelling import RunStore
+
+    catalog = FakeCatalog("d", 2, fixture_dataset)
+    with pytest.raises(ServiceError, match="different answers"):
+        run_round(
+            _round(annotation_digest="f" * 64),
+            catalog,
+            RunStore.local(tmp_path / "runs"),
+            tmp_path / "datasets",
+        )
+    assert catalog.materialised == 0
+
+
+# ----------------------------------------------------------------------
+# Speaking the same protocol
+# ----------------------------------------------------------------------
+
+
+@pytest.fixture
+def host(tmp_path, monkeypatch):
+    """The service as it runs, over a real local catalog."""
+    from fastapi.testclient import TestClient
+
+    from strata.catalog import Catalog
+    from strata.modelling.service import build
+
+    catalog = Catalog.local(tmp_path / "catalog")
+    monkeypatch.setenv("STRATA_MODELLING_TOKEN", "t")
+    monkeypatch.setenv("STRATA_CATALOG_URL", f"sqlite:///{tmp_path / 'catalog' / 'catalog.db'}")
+    monkeypatch.setenv("STRATA_BLOBS_ROOT", str(tmp_path / "catalog" / "blobs"))
+    monkeypatch.setenv("STRATA_MODELLING_ROOT", str(tmp_path / "modelling"))
+    monkeypatch.delenv("STRATA_S3_ENDPOINT", raising=False)
+    return TestClient(build()), catalog
+
+
+SPOKEN = {"Authorization": "Bearer t", PROTOCOL_HEADER: str(PROTOCOL)}
+
+
+def test_the_host_says_which_protocol_it_speaks(host):
+    client, _ = host
+    # Without a token: a laptop checks this before it sends anything at all
+    assert client.get("/healthz").json()["protocol"] == PROTOCOL
+
+
+def test_a_request_naming_no_protocol_is_refused(host):
+    """A laptop from before protocols, which would not send what this host needs."""
+    client, _ = host
+    response = client.get("/models", headers={"Authorization": "Bearer t"})
+    assert response.status_code == 426
+    assert f"protocol {PROTOCOL}" in response.json()["detail"]
+
+
+def test_a_request_in_this_protocol_is_served(host):
+    client, _ = host
+    assert client.get("/models", headers=SPOKEN).status_code == 200
+
+
+def test_a_mismatched_dataset_is_refused_before_the_round_is_accepted(host, tmp_path):
+    from strata.catalog import EVERYTHING
+    from strata.labels import Choices, ClassificationSchema
+
+    client, catalog = host
+    paths = []
+    for i in range(4):
+        path = tmp_path / f"{i}.jpg"
+        path.write_bytes(f"sample {i}".encode())
+        paths.append(path)
+    ids = catalog.ingest(paths, media="image")
+    label_set = catalog.create_label_set("x", ClassificationSchema(classes=["a"]))
+    catalog.annotate_many(label_set, [(i, Choices(values=["a"])) for i in ids])
+    dataset_id = catalog.create_dataset("d", label_set, collections=EVERYTHING)
+
+    body = _round(
+        dataset_id=dataset_id,
+        dataset_name="not-d",
+        dataset_version=1,
+        catalog_id=catalog.id,
+        model="multilabel",
+    ).model_dump(mode="json")
+    response = client.post("/round", json=body, headers=SPOKEN)
+
+    # Refused, not accepted and then failed: a 202 for a round that cannot
+    # run tells the caller nothing until it polls
+    assert response.status_code == 400
+    assert "not-d" in response.json()["detail"]
