@@ -10,9 +10,9 @@ Stamping closes that: a database this process just created is, by
 definition, at head. A database that already carried a revision is left
 alone, because it is alembic's to move.
 
-The script directory is found from this package rather than from
-``alembic.ini``, which lives at the root of a checkout and is not part of
-an installed wheel.
+The script directory is found from this package rather than from an
+``alembic.ini``, so everything here works from an installed wheel —
+:func:`migrate`, which is ``strata-modelling-migrate``, included.
 """
 
 from pathlib import Path
@@ -74,18 +74,42 @@ def require_current(engine: Engine, name: str) -> None:
         raise SchemaOutOfDate(
             f"This {name} predates migrations. Its schema is the baseline, so "
             f"record that and then bring it up to date:\n"
-            f"  uv run alembic --name {name} stamp {scripts.get_base()}\n"
-            f"  uv run alembic --name {name} upgrade head"
+            f"  strata-{name}-migrate stamp {scripts.get_base()}\n"
+            f"  strata-{name}-migrate upgrade head"
         )
     raise SchemaOutOfDate(
         f"This {name} is at revision {current}, and the code expects {head}:\n"
-        f"  uv run alembic --name {name} upgrade head"
+        f"  strata-{name}-migrate upgrade head"
     )
+
+
+def migrate(argv: list[str] | None = None) -> None:
+    """``strata-modelling-migrate``: alembic's commands, over this package's migrations.
+
+    The scripts ship inside the package, so this works the same from an
+    installed wheel as from a checkout, with no ``alembic.ini`` anywhere:
+    ``upgrade head``, ``stamp <revision>``, ``current``, ``history``. A run
+    store is one project's, so which one is always said outright:
+    ``$STRATA_RUNS_URL``, or ``$STRATA_RUNS_ROOT`` for its directory.
+    """
+    import logging
+
+    from alembic.config import CommandLine
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    cli = CommandLine(prog="strata-modelling-migrate")
+    options = cli.parser.parse_args(argv)
+    if not hasattr(options, "cmd"):
+        cli.parser.error("too few arguments")
+    config = Config(cmd_opts=options)
+    config.set_main_option("script_location", str(MIGRATIONS))
+    cli.run_cmd(config, options)
 
 
 __all__ = [
     "MIGRATIONS",
     "SchemaOutOfDate",
+    "migrate",
     "require_current",
     "script_directory",
     "stamp_if_new",

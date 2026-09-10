@@ -4,10 +4,10 @@ version = "0.1.0"
 description = "Train and predict over a materialised dataset; model plugins, runs and checkpoints"
 requires-python = ">=3.13"
 dependencies = [
-    "strata-labels",
+    "strata-labels>=0.1,<0.2",
     "sqlalchemy>=2.0",
     # Schema changes are migrations, not create_all: an existing database
-    # never gains a column from metadata alone. See alembic.ini.
+    # never gains a column from metadata alone. See strata-modelling-migrate.
     "alembic>=1.13",
 ]
 
@@ -34,7 +34,7 @@ test = ["pytest>=8.0"]
 # Only the service layer materialises; the training core takes a directory
 # and a manifest, so it stays testable with neither a catalog nor a database.
 service = [
-    "strata-catalog",
+    "strata-catalog>=0.1,<0.2",
     "fastapi>=0.100",
     "uvicorn>=0.20",
 ]
@@ -43,6 +43,9 @@ service = [
 # Only importable with the service extra; declared here so a host has a
 # command rather than a python -c.
 strata-modelling = "strata.modelling.service:main"
+# Alembic's commands over the migrations this package ships, so a run store
+# can be brought up to date from an installed wheel.
+strata-modelling-migrate = "strata.modelling.schema_version:migrate"
 
 # Short names a request can carry, so a caller need not know an import path.
 # Read from what is installed, which is the only honest answer to "what can
