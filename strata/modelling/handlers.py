@@ -84,10 +84,11 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
     # curve, which is the honest answer rather than a fabricated one.
     curve: list[tuple[int, dict[str, float]]] = []
 
-    def collect(done: int, total: int, reported: dict[str, float]) -> None:
+    def collect(done: int, total: int, reported: dict[str, float]) -> bool | None:
         curve.append((done, dict(reported)))
-        if on_epoch is not None:
-            on_epoch(done, total, reported)
+        # The caller's answer goes back to the model: a request to stop early
+        # is the caller's to make and the model's to honour, or not
+        return on_epoch(done, total, reported) if on_epoch is not None else None
 
     metrics = model.finetune(train_examples, classes, val_examples or None, collect)
 
@@ -184,8 +185,9 @@ def examples(directory: Path, manifest: Manifest) -> tuple[list[Example], list[E
 
     Read through the manifest's own definition rather than by key name, so
     a field the writer renamed fails here instead of arriving as nothing.
-    Public because the label-type conformance suite drives a value through
-    it — the last layer between a reviewer's answer and a model.
+    Public because it is what a trainer is handed — the last layer between
+    a reviewer's answer and a model — and modelling's label-type tests read
+    every type through it.
     """
     train_examples, val_examples = [], []
     for sample in manifest.samples:

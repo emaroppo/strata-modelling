@@ -200,6 +200,19 @@ class ModelContract:
         for done, total in seen:
             assert 1 <= done <= total
 
+    def test_finetune_accepts_a_request_to_stop(self, model, examples, classes):
+        """Asked to stop, a model may stop or carry on — but it has to finish.
+
+        A search ends a trial that is going nowhere by answering ``True``
+        from ``on_epoch``. Honouring that is optional; falling over because
+        the callback returned something is not.
+        """
+
+        def stop(done, total, metrics):
+            return True
+
+        assert isinstance(model.finetune(examples, classes, None, stop), dict)
+
     def test_predict_accepts_a_progress_report(self, model, examples, classes):
         """A model may ignore it, but it has to accept it.
 

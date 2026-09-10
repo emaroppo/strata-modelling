@@ -17,7 +17,10 @@ from strata.labels import AnyPrediction, AnyValue
 #: What a model reports as it trains: epochs done, epochs in total, and
 #: whatever it knows so far. The metrics are a snapshot rather than a
 #: result — the returned value is the result.
-EpochReport = Callable[[int, int, dict[str, float]], None]
+#:
+#: The callback may answer ``True`` to ask the model to stop early. See
+#: :meth:`Model.finetune`: honouring it is optional.
+EpochReport = Callable[[int, int, dict[str, float]], bool | None]
 
 #: What a model reports as it scores: samples done, samples in total.
 #: Nothing more, because a prediction in progress says nothing useful and
@@ -119,6 +122,13 @@ class Model(ABC):
         cannot tell minute one from minute nine. Calling it is optional and
         a model that ignores it still conforms — the caller must treat
         silence as "no news", never as "stalled".
+
+        The callback may return ``True`` to ask the model to stop early — a
+        search ending a trial that is going nowhere. A model that honours it
+        stops after the epoch it just reported and returns its metrics as
+        they stand. Honouring it is optional: a model that ignores the answer
+        still conforms and trains as long as it would have, so asking can
+        make a search cheaper but never makes it wrong.
         """
         ...
 
