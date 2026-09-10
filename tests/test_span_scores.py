@@ -6,8 +6,16 @@ that matter are the ones where a plausible-looking implementation is
 wrong.
 """
 
+import pytest
+
 from strata.labels import Span
-from strata.modelling.baselines.text_classifier import span_scores
+
+# span_scores is pure, but it lives in the text baselines' module, which
+# needs the text extra to import at all
+pytest.importorskip("torch", reason="needs the text extra")
+pytest.importorskip("transformers", reason="needs the text extra")
+
+from strata.modelling.baselines.text_classifier import span_scores  # noqa: E402
 
 
 def s(label, start, end):
