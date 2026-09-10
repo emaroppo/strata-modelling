@@ -9,7 +9,7 @@ from sqlalchemy.engine import Engine
 
 from . import tables as t
 from .requests import Run
-from .schema_version import stamp_if_new
+from .schema_version import require_current, stamp_if_new
 
 
 def host_token(name: str | None = None) -> str:
@@ -76,8 +76,14 @@ class RunStore:
         root.mkdir(parents=True, exist_ok=True)
         path = root / "runs.db"
         engine = create_engine(f"sqlite:///{path}")
+        from sqlalchemy import inspect
+
+        empty = not inspect(engine).has_table("run")
         t.metadata.create_all(engine)
-        stamp_if_new(engine)
+        if empty:
+            stamp_if_new(engine)
+        else:
+            require_current(engine, "modelling")
         _refuse_a_store_from_before_string_ids(engine, path)
         return cls(engine, root / "checkpoints")
 
