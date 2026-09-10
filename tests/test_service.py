@@ -71,7 +71,7 @@ class FakeCatalog:
     def dataset_named(self, dataset_id):
         return self.name, self.version
 
-    def materialise(self, dataset_id, dest, on_progress=None, cache=None):
+    def materialise(self, dataset_id, dest, on_progress=None, cache=None, features=None):
         self.materialised += 1
         self._write(dest)
         if on_progress is not None:
@@ -111,6 +111,8 @@ def fixture_dataset(tmp_path):
             format=MANIFEST_FORMAT,
             dataset="d",
             version=2,
+            # The fake catalog's own, as the real one stamps every version
+            catalog_id="20260101T000000-aaaaaaaa",
             label_set="x",
             label_schema=ClassificationSchema(classes=["a"]),
             samples=samples,
@@ -221,6 +223,32 @@ def test_a_manifest_from_before_formats_is_rebuilt(tmp_path, fixture_dataset, st
 
     assert catalog.materialised == 1
     assert json.loads((stale / "manifest.json").read_text())["format"] == MANIFEST_FORMAT
+
+
+def test_another_catalogs_folder_of_the_same_name_is_rebuilt(
+    tmp_path, fixture_dataset, stub_training
+):
+    """The first round after pointing the host at a rebuilt catalog.
+
+    Its numbering starts again, so its first version has the name and number
+    of one this host already holds from the old catalog. Reusing that folder
+    would train on the old data and report a number for the new.
+    """
+    from strata.modelling import RunStore
+
+    catalog = FakeCatalog("d", 2, fixture_dataset, id="20270101T000000-bbbbbbbb")
+    datasets = tmp_path / "datasets"
+    # Written by the old catalog, whose id the fixture stamps
+    fixture_dataset(datasets / "d" / "v002")
+
+    run_round(
+        RoundRequest(dataset_id=1, model="stub"),
+        catalog,
+        RunStore.local(tmp_path / "runs"),
+        datasets,
+    )
+
+    assert catalog.materialised == 1
 
 
 def test_the_parent_is_chosen_where_the_checkpoints_are(

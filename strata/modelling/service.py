@@ -31,7 +31,6 @@ with it.
 """
 
 import os
-import shutil
 import threading
 import uuid
 from pathlib import Path
@@ -245,41 +244,22 @@ def run_round(
     version, so two rounds over the same version share one directory rather
     than each fetching a copy.
     """
-    from strata.labels import MANIFEST_NAME, Manifest, ManifestFormatError
+    from strata.catalog import ensure_materialised
 
     check_servable(request.model)
 
     check_catalog(request.catalog_id, catalog.id)
 
-    name, version = catalog.dataset_named(request.dataset_id)
-    target = Path(datasets) / name / f"v{version:03d}"
+    def tick(done: int, total: int) -> None:
+        if report is not None:
+            report("materialising", done, total)
 
-    materialised = 0
-    try:
-        manifest = Manifest.model_validate_json((target / MANIFEST_NAME).read_text())
-    except FileNotFoundError:
-        manifest = None
-    except ManifestFormatError:
-        # A copy written by a release whose layout this one does not read.
-        # Rebuilt rather than refused: the catalog still holds the version,
-        # and a round is the wrong place to ask someone to delete a directory.
-        shutil.rmtree(target)
-        manifest = None
-    if manifest is None:
-        staging = Path(datasets) / name / "pending"
-        if staging.exists():
-            shutil.rmtree(staging)
-        counted = {"n": 0}
-
-        def tick(done: int, total: int) -> None:
-            counted["n"] = done
-            if report is not None:
-                report("materialising", done, total)
-
-        catalog.materialise(request.dataset_id, staging, on_progress=tick, cache=cache)
-        staging.rename(target)
-        materialised = counted["n"]
-        manifest = Manifest.model_validate_json((target / MANIFEST_NAME).read_text())
+    # The same rule the laptop uses for when a version already on disk may
+    # be reused, because it is the same function.
+    result = ensure_materialised(
+        catalog, request.dataset_id, datasets, on_progress=tick, cache=cache
+    )
+    manifest, target, materialised = result.manifest, result.directory, result.fetched
 
     previous = (
         None if request.fresh else store.latest(manifest.dataset, manifest.catalog_id)
