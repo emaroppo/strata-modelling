@@ -82,7 +82,14 @@ class FakeCatalog:
 @pytest.fixture
 def fixture_dataset(tmp_path):
     """A materialised version, written the way the catalog would write it."""
-    from strata.labels import MANIFEST_NAME, Choices, ClassificationSchema, Manifest, ManifestSample
+    from strata.labels import (
+        MANIFEST_FORMAT,
+        MANIFEST_NAME,
+        Choices,
+        ClassificationSchema,
+        Manifest,
+        ManifestSample,
+    )
 
     def write(dest):
         files = dest / "files"
@@ -101,6 +108,7 @@ def fixture_dataset(tmp_path):
                 )
             )
         manifest = Manifest(
+            format=MANIFEST_FORMAT,
             dataset="d",
             version=2,
             label_set="x",
@@ -183,6 +191,36 @@ def test_a_missing_version_is_materialised(tmp_path, fixture_dataset, stub_train
     assert catalog.materialised == 1
     assert (datasets / "d" / "v002" / "manifest.json").exists()
     assert result.metrics == {"val_accuracy": 0.5}
+
+
+def test_a_manifest_from_before_formats_is_rebuilt(tmp_path, fixture_dataset, stub_training):
+    """A copy this release cannot read is stale, not a reason to fail the round.
+
+    Every host has such directories from before manifests said their format,
+    and the catalog still holds each version they copied.
+    """
+    import json
+
+    from strata.labels import MANIFEST_FORMAT
+    from strata.modelling import RunStore
+
+    catalog = FakeCatalog("d", 2, fixture_dataset)
+    datasets = tmp_path / "datasets"
+    stale = datasets / "d" / "v002"
+    fixture_dataset(stale)
+    written = json.loads((stale / "manifest.json").read_text())
+    del written["format"]
+    (stale / "manifest.json").write_text(json.dumps(written))
+
+    run_round(
+        RoundRequest(dataset_id=1, model="stub"),
+        catalog,
+        RunStore.local(tmp_path / "runs"),
+        datasets,
+    )
+
+    assert catalog.materialised == 1
+    assert json.loads((stale / "manifest.json").read_text())["format"] == MANIFEST_FORMAT
 
 
 def test_the_parent_is_chosen_where_the_checkpoints_are(

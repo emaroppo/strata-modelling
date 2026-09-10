@@ -245,7 +245,7 @@ def run_round(
     version, so two rounds over the same version share one directory rather
     than each fetching a copy.
     """
-    from strata.labels import MANIFEST_NAME, Manifest
+    from strata.labels import MANIFEST_NAME, Manifest, ManifestFormatError
 
     check_servable(request.model)
 
@@ -255,7 +255,17 @@ def run_round(
     target = Path(datasets) / name / f"v{version:03d}"
 
     materialised = 0
-    if not (target / MANIFEST_NAME).exists():
+    try:
+        manifest = Manifest.model_validate_json((target / MANIFEST_NAME).read_text())
+    except FileNotFoundError:
+        manifest = None
+    except ManifestFormatError:
+        # A copy written by a release whose layout this one does not read.
+        # Rebuilt rather than refused: the catalog still holds the version,
+        # and a round is the wrong place to ask someone to delete a directory.
+        shutil.rmtree(target)
+        manifest = None
+    if manifest is None:
         staging = Path(datasets) / name / "pending"
         if staging.exists():
             shutil.rmtree(staging)
@@ -269,8 +279,8 @@ def run_round(
         catalog.materialise(request.dataset_id, staging, on_progress=tick, cache=cache)
         staging.rename(target)
         materialised = counted["n"]
+        manifest = Manifest.model_validate_json((target / MANIFEST_NAME).read_text())
 
-    manifest = Manifest.model_validate_json((target / MANIFEST_NAME).read_text())
     previous = (
         None if request.fresh else store.latest(manifest.dataset, manifest.catalog_id)
     )
