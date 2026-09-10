@@ -647,12 +647,17 @@ def host(tmp_path, monkeypatch):
     from strata.modelling.service import build
 
     catalog = Catalog.local(tmp_path / "catalog")
+    config = tmp_path / "config.toml"
+    config.write_text(f'[catalog]\nroot = "{tmp_path / "catalog"}"\n')
     monkeypatch.setenv("STRATA_MODELLING_TOKEN", "t")
-    monkeypatch.setenv("STRATA_CATALOG_URL", f"sqlite:///{tmp_path / 'catalog' / 'catalog.db'}")
-    monkeypatch.setenv("STRATA_BLOBS_ROOT", str(tmp_path / "catalog" / "blobs"))
+    monkeypatch.setenv("STRATA_CONFIG", str(config))
     monkeypatch.setenv("STRATA_MODELLING_ROOT", str(tmp_path / "modelling"))
-    monkeypatch.delenv("STRATA_S3_ENDPOINT", raising=False)
     return TestClient(build()), catalog
+
+
+def test_the_host_says_which_catalog_it_trains_from(host):
+    client, catalog = host
+    assert client.get("/healthz").json()["catalog"] == {"name": "default", "id": catalog.id}
 
 
 SPOKEN = {"Authorization": "Bearer t", PROTOCOL_HEADER: str(PROTOCOL)}

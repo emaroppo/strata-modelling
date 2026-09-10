@@ -462,10 +462,16 @@ def build():
         "This host trains what it is asked to; an unauthenticated one trains "
         "what anyone asks it to.",
     )
-    catalog_url = _required(
-        "STRATA_CATALOG_URL",
-        "The host materialises the dataset it is asked to train on.",
-    )
+    from strata.catalog.config import CatalogConfigError, host_catalog, open_catalog
+
+    # The same config.toml format the CLI reads, from the file
+    # $STRATA_CONFIG names — on this host, the CLI's own. Its default is the
+    # catalog this host trains from, so switching is changing that default
+    # and restarting.
+    try:
+        catalog_name, catalog_config = host_catalog()
+    except CatalogConfigError as e:
+        raise ServiceError(str(e)) from None
     root = Path(os.environ.get("STRATA_MODELLING_ROOT", "modelling"))
     datasets = root / "datasets"
     datasets.mkdir(parents=True, exist_ok=True)
@@ -475,34 +481,9 @@ def build():
     def catalog_for() -> Catalog:
         # Per request rather than once: a long-lived connection to a database
         # on another machine outlives its usefulness, and training rounds are
-        # far enough apart that reconnecting costs nothing.
-        return Catalog.connect(catalog_url, _blobs())
-
-    def _blobs():
-        # Built by the same code the CLI uses, so the two cannot open a
-        # bucket differently. Described from the environment until this
-        # host reads a catalog file of its own.
-        from strata.catalog.config import CatalogConfig, blobs_for
-
-        endpoint = os.environ.get("STRATA_S3_ENDPOINT", "")
-        if endpoint:
-            bucket = _required("STRATA_S3_BUCKET", "An endpoint without a bucket names nothing.")
-            local = None
-        else:
-            bucket = ""
-            local = Path(_required(
-                "STRATA_BLOBS_ROOT", "With no S3 endpoint the host reads files."
-            ))
-        return blobs_for(
-            CatalogConfig(
-                s3_endpoint=endpoint,
-                s3_bucket=bucket,
-                s3_region=os.environ.get("STRATA_S3_REGION", "garage"),
-                s3_access_key=os.environ.get("STRATA_S3_ACCESS_KEY", ""),
-                s3_secret_key=os.environ.get("STRATA_S3_SECRET_KEY", ""),
-            ),
-            local=local,
-        )
+        # far enough apart that reconnecting costs nothing. Opened by the
+        # same code the CLI uses, so the two cannot read a catalog differently.
+        return open_catalog(catalog_config)
 
     def authorise(authorization: str = Header(default="")) -> None:
         import hmac
@@ -545,8 +526,13 @@ def build():
     @app.get("/healthz")
     def healthz() -> dict:
         # Unauthenticated, so a laptop can check it speaks this host's
-        # protocol before sending anything at all
-        return {"ok": True, "protocol": PROTOCOL}
+        # protocol, and is on its catalog, before sending anything at all
+        served = {"name": catalog_name, "id": None}
+        try:
+            served["id"] = served_catalog_id()
+        except Exception as e:  # an unreachable index is worth reporting, not a 500
+            served["error"] = f"{type(e).__name__}: {e}"
+        return {"ok": True, "protocol": PROTOCOL, "catalog": served}
 
     @app.get("/models", dependencies=[Depends(authorise), Depends(spoken)])
     def models() -> dict:
