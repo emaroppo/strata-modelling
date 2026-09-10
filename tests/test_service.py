@@ -77,6 +77,7 @@ class FakeCatalog:
 
     def materialise(self, dataset_id, dest, on_progress=None, cache=None, features=None):
         self.materialised += 1
+        self.features = list(features or [])
         self._write(dest)
         if on_progress is not None:
             on_progress(2, 2)
@@ -704,3 +705,46 @@ def test_a_mismatched_dataset_is_refused_before_the_round_is_accepted(host, tmp_
     # run tells the caller nothing until it polls
     assert response.status_code == 400
     assert "not-d" in response.json()["detail"]
+
+
+# ----------------------------------------------------------------------
+# Features
+# ----------------------------------------------------------------------
+
+
+def test_declared_features_reach_the_version_the_host_builds(
+    tmp_path, fixture_dataset, stub_training
+):
+    """The bug this closes: the host materialised without them.
+
+    A model that declared a feature it needed was refused; one that merely
+    used features trained without them, and reported a number for it.
+    """
+    from strata.modelling import RunStore
+
+    declared = {"name": "species", "source": "metadata", "ref": "species"}
+    catalog = FakeCatalog("d", 2, fixture_dataset)
+    run_round(
+        _round(features=[declared]),
+        catalog,
+        RunStore.local(tmp_path / "runs"),
+        tmp_path / "datasets",
+    )
+
+    assert [spec.as_dict() for spec in catalog.features] == [declared]
+
+
+def test_a_feature_declaration_the_host_cannot_read_is_refused_first(
+    tmp_path, fixture_dataset
+):
+    from strata.modelling import RunStore
+
+    catalog = FakeCatalog("d", 2, fixture_dataset)
+    with pytest.raises(ServiceError, match="source"):
+        run_round(
+            _round(features=[{"name": "species", "ref": "species"}]),
+            catalog,
+            RunStore.local(tmp_path / "runs"),
+            tmp_path / "datasets",
+        )
+    assert catalog.materialised == 0

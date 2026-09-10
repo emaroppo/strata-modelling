@@ -94,6 +94,12 @@ class RoundRequest(BaseModel):
     #: an identity, and a client too old to send one is turned away by the
     #: protocol check before it gets here.
     catalog_id: str
+    #: What the model is to be told about each sample, as the project
+    #: declares it under ``[[data.features]]``: ``{name, source, ref}``. The
+    #: host resolves the values from its own catalog as it materialises, so
+    #: only the declarations travel. Defaulted: a project declaring none
+    #: sends none.
+    features: list[dict] = Field(default_factory=list)
 
 
 class RoundResponse(BaseModel):
@@ -262,6 +268,21 @@ def check_dataset(request: RoundRequest, found) -> None:
         )
 
 
+def check_features(request: RoundRequest) -> list:
+    """The feature declarations a round carries, or a refusal naming the bad one.
+
+    Read before anything is fetched: a declaration this host cannot act on
+    would otherwise fail partway through materialising, after the expensive
+    part.
+    """
+    from strata.catalog.features import FeatureError, FeatureSpec
+
+    try:
+        return [FeatureSpec.from_dict(raw) for raw in request.features]
+    except FeatureError as e:
+        raise ServiceError(f"The round's feature declarations: {e}") from None
+
+
 def check_servable(model: str) -> None:
     """Refuse a model this host cannot honestly resolve.
 
@@ -301,15 +322,18 @@ def run_round(
 
     check_catalog(request.catalog_id, catalog.id)
     check_dataset(request, catalog.dataset_named(request.dataset_id))
+    specs = check_features(request)
 
     def tick(done: int, total: int) -> None:
         if report is not None:
             report("materialising", done, total)
 
     # The same rule the laptop uses for when a version already on disk may
-    # be reused, because it is the same function.
+    # be reused, because it is the same function — and with the project's
+    # features, which the host used to leave out, so a remote round trained
+    # on a dataset that did not carry them.
     result = ensure_materialised(
-        catalog, request.dataset_id, datasets, on_progress=tick, cache=cache
+        catalog, request.dataset_id, datasets, features=specs, on_progress=tick, cache=cache
     )
     manifest, target, materialised = result.manifest, result.directory, result.fetched
 
@@ -541,6 +565,7 @@ def build():
             except CatalogError as e:
                 raise ServiceError(str(e)) from None
             check_dataset(request, found)
+            check_features(request)
             return jobs.submit(request)
         except BusyError as e:
             # 409 rather than 400: the request is fine, the host is not free
