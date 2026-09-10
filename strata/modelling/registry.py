@@ -82,7 +82,17 @@ def _from_registry(name: str) -> type[Model]:
             f"No model named {name!r} is registered here (available: {known}). "
             f"Names with a ':' are treated as a direct reference instead."
         )
-    return found[0].load()
+    entry = found[0]
+    try:
+        return entry.load()
+    except ImportError as exc:
+        # The common case is a baseline asked for by name on an install that
+        # never asked for its framework — which is what a request over the
+        # wire does — and it deserves the same answer as a full reference
+        raise ModelError(
+            f"Model {name!r} is registered as {entry.value}, which will not "
+            f"import: {exc}{_extra_hint(entry.module)}"
+        ) from exc
 
 
 def _module_from_file(target: str, root: Path | None):

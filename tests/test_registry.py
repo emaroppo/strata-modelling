@@ -48,14 +48,38 @@ def test_a_model_bringing_a_missing_dependency_says_so(tmp_path):
 def test_a_bare_name_goes_to_the_registry():
     # No ':' means a short name, which is what a request carries once it
     # crosses a wire
+    pytest.importorskip("timm", reason="multilabel is an image baseline")
     assert resolve("multilabel").__name__ == "MultiLabelClassifier"
+
+
+def test_a_name_whose_extra_is_missing_says_which_extra(monkeypatch):
+    """Asked for by name it once raised a bare ModuleNotFoundError from inside importlib."""
+    import strata.modelling.registry as registry
+
+    class Unimportable:
+        name = "multilabel"
+        value = "strata.modelling.baselines.classifier:MultiLabelClassifier"
+        module = "strata.modelling.baselines.classifier"
+
+        def load(self):
+            raise ModuleNotFoundError("No module named 'timm'")
+
+    monkeypatch.setattr(registry, "entry_points", lambda group: [Unimportable()])
+    with pytest.raises(ModelError, match="needs the 'image' extra"):
+        resolve("multilabel")
 
 
 def test_every_advertised_name_actually_resolves():
     # An entry point can name a class that was renamed or removed, and
-    # nothing notices until someone asks for it
+    # nothing notices until someone asks for it. A baseline whose extra is
+    # not installed here cannot resolve, and has to say which extra instead.
     for name in available():
-        assert issubclass(resolve(name), Model)
+        try:
+            model = resolve(name)
+        except ModelError as e:
+            assert "extra" in str(e), f"{name}: {e}"
+            continue
+        assert issubclass(model, Model)
 
 
 def test_an_unknown_short_name_explains_the_other_path():
