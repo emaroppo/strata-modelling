@@ -82,8 +82,7 @@ class FakeCatalog:
 @pytest.fixture
 def fixture_dataset(tmp_path):
     """A materialised version, written the way the catalog would write it."""
-    from strata.catalog import MANIFEST_NAME, Manifest, ManifestSample
-    from strata.labels import Choices, ClassificationSchema
+    from strata.labels import MANIFEST_NAME, Choices, ClassificationSchema, Manifest, ManifestSample
 
     def write(dest):
         files = dest / "files"

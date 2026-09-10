@@ -77,7 +77,7 @@ class PredictionCache:
         """Whatever of ``checksums`` this run has already answered.
 
         ``digests`` says what the model was told about each sample, by
-        :func:`strata.catalog.features.digest_of`. A checksum whose
+        :func:`strata.labels.feature_digest`. A checksum whose
         features have changed since it was scored simply misses — the
         stored row is still the right answer for the inputs it was computed
         from, and those inputs are no longer the ones being asked about.

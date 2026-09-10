@@ -13,7 +13,7 @@ from pathlib import Path
 from pydantic import TypeAdapter
 from sqlalchemy import update
 
-from strata.labels import AnySchema, AnyValue
+from strata.labels import MANIFEST_NAME, AnySchema, AnyValue
 
 from . import tables as t
 from .model import Example, Model
@@ -27,8 +27,6 @@ _SCHEMA = TypeAdapter(AnySchema)
 #: kind as a validation error, which is what made training a span or bbox
 #: dataset impossible: the union is the only thing that admits all three.
 _VALUE = TypeAdapter(AnyValue)
-
-MANIFEST_NAME = "manifest.json"
 
 
 class TrainingError(Exception):

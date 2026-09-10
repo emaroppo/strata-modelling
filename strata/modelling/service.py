@@ -38,8 +38,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from strata.catalog.features import digest_of as feature_digest
-from strata.labels import AnyPrediction, Prediction
+from strata.labels import AnyPrediction, Prediction, feature_digest
 
 from .handlers import train as run_train
 from .registry import available
@@ -246,7 +245,7 @@ def run_round(
     version, so two rounds over the same version share one directory rather
     than each fetching a copy.
     """
-    from strata.catalog import MANIFEST_NAME, Manifest
+    from strata.labels import MANIFEST_NAME, Manifest
 
     check_servable(request.model)
 
