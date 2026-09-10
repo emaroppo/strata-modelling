@@ -93,9 +93,16 @@ class _TinyEncoder(torch.nn.Module):
 class _TextContract(ModelContract):
     MODEL: type = TextClassifier
     PER_TOKEN: bool = False
+    #: Constructor settings, so the model a checkpoint is restored into is
+    #: configured like the one that wrote it — as a real restore is, from the
+    #: params recorded on the run. Set on ``model`` alone, the windowed tests
+    #: compared a windowed model with an unwindowed one: padded to different
+    #: lengths, the stub's logits differed, and a near-even pair of classes
+    #: swapped places about one run in six.
+    WINDOW: dict = {}
 
     def _build(self, tokenizer, monkeypatch):
-        instance = self.MODEL(num_epochs=1, batch_size=2, device="cpu")
+        instance = self.MODEL(num_epochs=1, batch_size=2, device="cpu", **self.WINDOW)
         instance._tokenizer = tokenizer
         monkeypatch.setattr(
             type(instance),
@@ -168,13 +175,7 @@ class TestWindowedMulticlassClassifier(TestTextMulticlassClassifier):
     part of this head windowing can break.
     """
 
-    @pytest.fixture
-    def model(self, tokenizer, monkeypatch):
-        instance = self._build(tokenizer, monkeypatch)
-        instance.window = 8
-        instance.window_overlap = 2
-        instance.window_aggregation = "mean"
-        return instance
+    WINDOW = {"window": 8, "window_overlap": 2, "window_aggregation": "mean"}
 
 
 class TestTextSpanTagger(_TextContract):
@@ -206,9 +207,4 @@ class TestWindowedSpanTagger(TestTextSpanTagger):
     list. That is the property windowing is most able to break.
     """
 
-    @pytest.fixture
-    def model(self, tokenizer, monkeypatch):
-        instance = self._build(tokenizer, monkeypatch)
-        instance.window = 8
-        instance.window_overlap = 2
-        return instance
+    WINDOW = {"window": 8, "window_overlap": 2}
