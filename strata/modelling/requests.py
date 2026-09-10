@@ -41,6 +41,12 @@ class PredictRequest(BaseModel):
     #: Absolute paths. Predicting over samples that are not in any dataset
     #: is the normal case — that is what the unlabelled pool is.
     paths: list[Path] = Field(default_factory=list)
+    #: What the model is told about each path, positional against ``paths``.
+    #: Empty for a project that declares no features. Sent with the request
+    #: rather than looked up by the handler because the handler has no
+    #: catalog — that separation is what lets a model be trained on a
+    #: machine that has never heard of one.
+    features: list[dict] = Field(default_factory=list)
 
 
 class ScoredPath(BaseModel):

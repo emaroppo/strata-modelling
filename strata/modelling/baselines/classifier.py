@@ -450,7 +450,9 @@ class MultiLabelClassifier(Model):
             "val_accuracy": total_correct / max(total_samples, 1),
         }
 
-    def predict(self, image_paths: list[Path], on_batch=None) -> list[ChoicesPrediction]:
+    def predict(
+        self, image_paths: list[Path], on_batch=None, *, features=None
+    ) -> list[ChoicesPrediction]:
         if self._backbone is None or not self.classes:
             raise RuntimeError("Model has no weights. Call finetune() or load() first.")
         if not image_paths:

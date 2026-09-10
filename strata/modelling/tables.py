@@ -108,6 +108,19 @@ prediction = Table(
     metadata,
     Column("run_id", String(40), primary_key=True),
     Column("checksum", String(64), primary_key=True),
+    # The third input. A prediction is a function of a checkpoint, some
+    # bytes *and whatever the model was told about the sample* — and unlike
+    # the first two, the third can change: a feature is another label set's
+    # answer, under review by whoever owns it, so a correction is the
+    # ordinary case rather than the exception.
+    #
+    # In the key rather than a policy to invalidate on, which is what lets
+    # the note above stay literally true. Nothing here is ever invalidated;
+    # the key simply names every input now, so a corrected feature is a
+    # miss and the old row remains the right answer for the inputs it was
+    # computed from. Empty where a project declares no features, which is
+    # what every row written before this column was.
+    Column("feature_digest", String(64), primary_key=True, server_default=""),
     # The value as the model produced it, stored whole rather than split
     # into columns: what a prediction looks like is the label schema's
     # business, and this only has to hand it back unchanged.

@@ -8,7 +8,7 @@ machine that has neither.
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
 
@@ -37,6 +37,14 @@ class Example:
 
     path: Path
     target: AnyValue
+    #: What is already known about this sample and may be told to the
+    #: model — a species, a coordinate. Empty for a project that declares
+    #: none, which is every project that existed before features did.
+    #:
+    #: Plain values rather than :mod:`strata.labels` ones: a feature read
+    #: from a metadata key has no label shape, and typing this as a label
+    #: value would make the label-set source the only one expressible.
+    features: dict = field(default_factory=dict)
 
 
 class Model(ABC):
@@ -58,6 +66,16 @@ class Model(ABC):
     #: prediction — so the label set has to declare it, and training refuses
     #: if it does not.
     requires_classes: ClassVar[tuple[str, ...]] = ()
+
+    #: Features this model cannot predict without. Declared the way
+    #: :attr:`requires_classes` is, and checked the same way — before the
+    #: round rather than during it.
+    #:
+    #: "Cannot predict without", not "cannot train without", and the
+    #: distinction is load-bearing: a model that learns to infer a feature
+    #: as an auxiliary task wants it while training and never at inference.
+    #: Declaring the stronger thing would make that model inexpressible.
+    requires_features: ClassVar[tuple[str, ...]] = ()
 
     #: Bumped when a change makes existing checkpoints unreadable. A run
     #: records it, and warm-starting from a checkpoint written by a
@@ -106,9 +124,21 @@ class Model(ABC):
 
     @abstractmethod
     def predict(
-        self, paths: list[Path], on_batch: "BatchReport | None" = None
+        self,
+        paths: list[Path],
+        on_batch: "BatchReport | None" = None,
+        *,
+        features: list[dict] | None = None,
     ) -> list[AnyPrediction]:
         """One prediction per path, in order.
+
+        ``features`` is positional against ``paths``, the way a
+        prediction's confidences are positional against its values: the nth
+        entry belongs to the nth path. None where the project declares no
+        features, which is why it defaults rather than being required.
+
+        Keyword-only because it arrived after ``on_batch`` and inserting it
+        before would silently rebind every existing positional call.
 
         ``on_batch(done, total)`` is called as scoring proceeds, for the same
         reason :meth:`finetune` takes ``on_epoch``: ranking a review queue

@@ -516,7 +516,7 @@ class _TransformerBase(Model):
         keys = [k for k in items[0] if k != "offsets"]
         return {k: torch.stack([item[k] for item in items]) for k in keys}
 
-    def predict(self, paths: list[Path], on_batch=None) -> list:
+    def predict(self, paths: list[Path], on_batch=None, *, features=None) -> list:
         if self._model is None or not self.classes:
             raise RuntimeError("Model has no weights. Call finetune() or load() first.")
         self._model.eval()

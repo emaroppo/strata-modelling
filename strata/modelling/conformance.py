@@ -234,6 +234,20 @@ class ModelContract:
         for output in model.predict([e.path for e in examples]):
             assert _class_names(output.values) <= set(classes)
 
+    def test_predict_accepts_features(self, model, examples, classes):
+        """A model may ignore them, but it has to accept them.
+
+        Same rule as ``on_batch``, for the same reason: the caller decides
+        what a project declares, and a model that refuses the argument
+        cannot be used by any project that declares one — which it would
+        discover as a TypeError partway through a scoring pass rather than
+        as a contract failure here.
+        """
+        model.finetune(examples, classes)
+        paths = [e.path for e in examples]
+        outputs = model.predict(paths, None, features=[{} for _ in paths])
+        assert len(outputs) == len(paths)
+
     def test_predict_on_nothing_returns_nothing(self, model, examples, classes):
         model.finetune(examples, classes)
         assert model.predict([]) == []

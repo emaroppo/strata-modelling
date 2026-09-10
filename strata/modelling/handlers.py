@@ -58,6 +58,19 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
             f"Either declare it, or use a model without an implicit negative class."
         )
 
+    declared = {f.get("name") for f in manifest.get("features") or ()}
+    unmet = [f for f in model_cls.requires_features if f not in declared]
+    if unmet:
+        # Before the round rather than during it, the same as an undeclared
+        # class. A model that needs a feature nobody supplies would train
+        # on whatever a missing value degrades to and report a number for
+        # it — and the degradation is silent by construction.
+        raise TrainingError(
+            f"Model {request.model!r} needs feature(s) {', '.join(unmet)}, which "
+            f"this dataset does not carry (it has: {', '.join(sorted(declared)) or 'none'}). "
+            f"Declare them under [[data.features]] and materialise again."
+        )
+
     model: Model = _construct(model_cls, request.model, request.params)
     try:
         model.requires_schema(schema)
@@ -131,7 +144,9 @@ def predict(request: PredictRequest, store: RunStore, on_batch=None) -> list[Sco
 
     model: Model = _construct(resolve(run.model), run.model, run.params)
     model.load(Path(run.checkpoint))
-    outputs = model.predict(list(request.paths), on_batch)
+    outputs = model.predict(
+        list(request.paths), on_batch, features=request.features or None
+    )
     return [
         ScoredPath(path=path, value=value)
         for path, value in zip(request.paths, outputs, strict=True)
@@ -178,6 +193,7 @@ def _examples(directory: Path, manifest: dict) -> tuple[list[Example], list[Exam
         example = Example(
             path=Path(directory) / sample["path"],
             target=_VALUE.validate_python(sample["value"]),
+            features=sample.get("features") or {},
         )
         (val_examples if sample.get("val") else train_examples).append(example)
     return train_examples, val_examples

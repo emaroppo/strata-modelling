@@ -68,24 +68,51 @@ class PredictionCache:
         """The cache belonging to a run store."""
         return cls(store.engine)
 
-    def get(self, run_id: str, checksums: list[str]) -> dict[str, Prediction]:
-        """Whatever of ``checksums`` this run has already answered."""
+    def get(
+        self,
+        run_id: str,
+        checksums: list[str],
+        digests: dict[str, str] | None = None,
+    ) -> dict[str, Prediction]:
+        """Whatever of ``checksums`` this run has already answered.
+
+        ``digests`` says what the model was told about each sample, by
+        :func:`strata.catalog.features.digest_of`. A checksum whose
+        features have changed since it was scored simply misses — the
+        stored row is still the right answer for the inputs it was computed
+        from, and those inputs are no longer the ones being asked about.
+
+        Omitted, every lookup uses the empty digest, which is what a
+        project declaring no features has always written.
+        """
         found: dict[str, Prediction] = {}
         if not checksums:
             return found
+        digests = digests or {}
         with self.engine.connect() as conn:
             for chunk in _chunks(list(checksums), 500):
                 rows = conn.execute(
-                    select(t.prediction.c.checksum, t.prediction.c.value).where(
+                    select(
+                        t.prediction.c.checksum,
+                        t.prediction.c.feature_digest,
+                        t.prediction.c.value,
+                    ).where(
                         t.prediction.c.run_id == run_id,
                         t.prediction.c.checksum.in_(chunk),
                     )
                 )
                 for row in rows:
+                    if (row.feature_digest or "") != digests.get(row.checksum, ""):
+                        continue
                     found[row.checksum] = _PREDICTION.validate_json(row.value)
         return found
 
-    def put(self, run_id: str, made: dict[str, Prediction]) -> int:
+    def put(
+        self,
+        run_id: str,
+        made: dict[str, Prediction],
+        digests: dict[str, str] | None = None,
+    ) -> int:
         """Record what a run said. Rewriting an entry is a no-op by construction."""
         if not made:
             return 0
@@ -107,7 +134,12 @@ class PredictionCache:
                 f"confidences gone rather than failing."
             )
         rows = [
-            {"run_id": run_id, "checksum": checksum, "value": value.model_dump_json()}
+            {
+                "run_id": run_id,
+                "checksum": checksum,
+                "feature_digest": (digests or {}).get(checksum, ""),
+                "value": value.model_dump_json(),
+            }
             for checksum, value in made.items()
         ]
         with self.engine.begin() as conn:
@@ -117,7 +149,7 @@ class PredictionCache:
                 # conflict keeps a re-run from failing on work it repeated.
                 conn.execute(
                     sqlite_insert(t.prediction).on_conflict_do_nothing(
-                        index_elements=["run_id", "checksum"]
+                        index_elements=["run_id", "checksum", "feature_digest"]
                     ),
                     chunk,
                 )
