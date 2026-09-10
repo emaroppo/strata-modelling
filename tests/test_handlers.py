@@ -3,8 +3,9 @@
 import json
 
 import pytest
-from counting_model import COUNTER
+from counting_model import COUNTER, COUNTING_MODEL
 
+from strata.labels import MANIFEST_FORMAT
 from strata.modelling import (
     ModelError,
     PredictRequest,
@@ -60,6 +61,45 @@ def test_the_split_from_the_manifest_reaches_the_model(store, dataset_dir):
         TrainRequest(dataset_dir=dataset_dir(n_train=7, n_val=3), model=COUNTER), store
     )
     assert run.metrics["n_train"] == 7
+
+
+def test_a_manifest_written_without_a_catalog_trains(store, tmp_path):
+    """The smallest manifest a producer outside strata could honestly write.
+
+    No catalog id, no sample ids, no version, no split ratios — nothing only
+    a strata catalog could know. A dataset folder is the portable unit, and
+    requiring any of those would make whoever wrote it invent them.
+    """
+    root = tmp_path / "outside"
+    (root / "files").mkdir(parents=True)
+    (root / COUNTER.split(":")[0]).write_text(COUNTING_MODEL)
+    samples = []
+    for i, split in enumerate(["train", "train", "train", "val"]):
+        (root / "files" / f"{i}.jpg").write_bytes(f"image {i}".encode())
+        samples.append(
+            {
+                "checksum": f"{i:064x}",
+                "path": f"files/{i}.jpg",
+                "split": split,
+                "value": {"kind": "choices", "values": ["cat"]},
+            }
+        )
+    (root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "format": MANIFEST_FORMAT,
+                "dataset": "outside",
+                "label_set": "presence",
+                "label_schema": {"task": "classification", "classes": ["cat", "dog"]},
+                "samples": samples,
+            }
+        )
+    )
+
+    run = train(TrainRequest(dataset_dir=root, model=COUNTER), store)
+
+    assert (run.metrics["n_train"], run.metrics["n_val"]) == (3, 1)
+    assert (run.dataset_version, run.catalog_id) == (None, None)
 
 
 def test_a_holdout_never_reaches_the_model(store, dataset_dir):
