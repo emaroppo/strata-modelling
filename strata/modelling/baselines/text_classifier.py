@@ -890,8 +890,8 @@ class TextSpanTagger(_TransformerBase):
         ``_to_output`` falls back to argmax — so its accuracy describes a
         rule that exists nowhere else. Not a mistake worth repeating.
 
-        Where this metric eventually belongs is ``proposals.md`` §10, as a
-        framework-side evaluator computing it identically for every model.
+        Where this metric eventually belongs is a framework-side evaluator,
+        computing it identically for every model.
         With one span model the bias is constant and this is enough.
         """
         metrics = super()._evaluate(samples)
