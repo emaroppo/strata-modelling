@@ -3,14 +3,17 @@
 #
 #   ./deploy/gpu/bootstrap-env.sh
 #
-# One value is born here — the token this host and its callers share. The
-# rest is either already in config.toml (where the index and the bucket are)
-# or is a credential this script has no business guessing.
+# One value is born here — the token this host and its callers share. Where
+# the catalog is does not go in this file at all: the service reads this
+# machine's own config.toml (STRATA_CONFIG), the one the CLI uses, and trains
+# from its default catalog. Pointing this host at another catalog is changing
+# that default and restarting the service; nothing here needs regenerating.
 #
-# The S3 keys are left blank on purpose even though this machine probably
-# has a working pair in its environment: those are the read-write ones, and
-# this host reads samples and writes nothing to the bucket. Pasting the
-# wrong key here would work, which is exactly why it is not done for you.
+# The rest are credentials this script has no business guessing. The S3 keys
+# are left blank on purpose even though this machine probably has a working
+# pair in its environment: those are the read-write ones, and this host reads
+# samples and writes nothing to the bucket. Pasting the wrong key here would
+# work, which is exactly why it is not done for you.
 #
 set -euo pipefail
 
@@ -24,38 +27,8 @@ if [ -e "$env_file" ]; then
     exit 1
 fi
 if [ ! -r "$config" ]; then
-    echo "No $config to read the index and bucket from." >&2
+    echo "No $config. The service reads its catalog from it, as the CLI does." >&2
     exit 1
-fi
-
-# Straight out of the config this machine already uses, so the service and
-# the CLI cannot drift apart on where the catalog is.
-catalog_url=$(grep -oE 'postgresql\+psycopg://[^"]+' "$config" | head -1 || true)
-s3_endpoint=$(sed -nE 's/^s3_endpoint[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$config" | head -1)
-s3_bucket=$(sed -nE 's/^s3_bucket[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$config" | head -1)
-
-if [ -z "$catalog_url" ]; then
-    echo "No postgres URL in $config — set [catalog] url first." >&2
-    exit 1
-fi
-
-# config.toml deliberately holds no password; $PGPASSWORD supplies it. The
-# service reads a single URL, so the two halves are joined here.
-# Only the userinfo decides, not the whole string: every one of these URLs
-# has a colon in its scheme, so testing the lot finds a password that is not
-# there and skips the join in silence.
-authority=${catalog_url#*://}
-userinfo=""
-[[ "$authority" == *@* ]] && userinfo=${authority%%@*}
-
-if [[ "$userinfo" != *:* ]]; then
-    if [ -n "${PGPASSWORD:-}" ]; then
-        catalog_url=$(printf '%s' "$catalog_url" |
-            sed -E "s|://([^@/]+)@|://\1:${PGPASSWORD}@|")
-    else
-        echo "No password in the URL and \$PGPASSWORD is unset — leaving CHANGEME." >&2
-        catalog_url=$(printf '%s' "$catalog_url" | sed -E 's|://([^@/]+)@|://\1:CHANGEME@|')
-    fi
 fi
 
 token=$(openssl rand -hex 32)
@@ -72,7 +45,12 @@ cat > "$env_file" <<EOF
 STRATA_MODELLING_ROOT=$modelling_root
 STRATA_BLOBS_CACHE=$blobs_cache
 
-STRATA_CATALOG_URL=$catalog_url
+# Where the catalog is: this machine's config.toml, whose [catalog] default is
+# the one trained from. Everything below is a credential.
+STRATA_CONFIG=$config
+
+# The index's password. config.toml names the index without one.
+PGPASSWORD=${PGPASSWORD:-}
 
 # Shared with whoever submits rounds. Put it in the password manager as
 # 'strata-modelling-token' so the CLI can export it too.
@@ -80,8 +58,6 @@ STRATA_MODELLING_TOKEN=$token
 
 # The READ-ONLY key. This host reads samples and writes nothing to the
 # bucket, and a key that can write is a key that can destroy the corpus.
-STRATA_S3_ENDPOINT=$s3_endpoint
-STRATA_S3_BUCKET=$s3_bucket
 STRATA_S3_ACCESS_KEY=
 STRATA_S3_SECRET_KEY=
 
@@ -94,9 +70,9 @@ echo "Wrote $env_file (0600)."
 echo
 echo "Still to fill in by hand:"
 echo "  STRATA_S3_ACCESS_KEY / STRATA_S3_SECRET_KEY — the read-only Garage key"
-case "$catalog_url" in
-    *CHANGEME*) echo "  STRATA_CATALOG_URL — no password; source scripts/secrets.sh and redo, or paste it" ;;
-esac
+if [ -z "${PGPASSWORD:-}" ]; then
+    echo "  PGPASSWORD — the index's password; source scripts/secrets.sh and redo, or paste it"
+fi
 echo
 echo "Then:"
 echo "  cp $here/strata-modelling.service ~/.config/systemd/user/"
