@@ -75,7 +75,19 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
     if not train_examples:
         raise TrainingError(f"{request.dataset_dir} has no training samples")
 
-    metrics = model.finetune(train_examples, classes, val_examples or None, on_epoch)
+    # Kept as well as forwarded. The caller's callback drives a progress bar
+    # and then the number is gone; the store is shaped to hold the curve —
+    # an `epoch` column and an index leading with it — and nothing was ever
+    # putting anything in it. A model that never calls back records no
+    # curve, which is the honest answer rather than a fabricated one.
+    curve: list[tuple[int, dict[str, float]]] = []
+
+    def collect(done: int, total: int, reported: dict[str, float]) -> None:
+        curve.append((done, dict(reported)))
+        if on_epoch is not None:
+            on_epoch(done, total, reported)
+
+    metrics = model.finetune(train_examples, classes, val_examples or None, collect)
 
     run = store.record(
         Run(
@@ -97,6 +109,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
             classes=classes,
         ),
         metrics,
+        curve,
     )
     checkpoint = store.checkpoint_path(run.id)
     model.save(checkpoint)

@@ -113,3 +113,86 @@ def test_params_round_trip(store):
 def test_metrics_are_floats_whatever_went_in(store):
     run = store.record(a_run(), {"n_train": 40})
     assert store.get(run.id).metrics["n_train"] == pytest.approx(40.0)
+
+
+# ----------------------------------------------------------------------
+# the training curve
+# ----------------------------------------------------------------------
+
+
+def test_a_run_records_what_it_reported_as_it_trained(tmp_path):
+    store = RunStore.local(tmp_path)
+    run = store.record(
+        Run(
+            id="",
+            dataset="d",
+            dataset_version=1,
+            label_set="d",
+            model="m",
+            model_version="1",
+            classes=["a"],
+        ),
+        {"val_accuracy": 0.9},
+        curve=[(1, {"loss": 0.5}), (2, {"loss": 0.3})],
+    )
+
+    assert store.curve(run.id) == [(1, {"loss": 0.5}), (2, {"loss": 0.3})]
+
+
+def test_the_curve_is_not_mixed_into_the_final_metrics(tmp_path):
+    """`get` answers with what the run ended at, not every step of it."""
+    store = RunStore.local(tmp_path)
+    run = store.record(
+        Run(
+            id="",
+            dataset="d",
+            dataset_version=1,
+            label_set="d",
+            model="m",
+            model_version="1",
+            classes=["a"],
+        ),
+        {"loss": 0.2},
+        curve=[(1, {"loss": 0.9}), (2, {"loss": 0.4})],
+    )
+
+    assert store.get(run.id).metrics == {"loss": 0.2}
+
+
+def test_a_run_that_reported_nothing_has_no_curve(tmp_path):
+    """A model may ignore on_epoch, and silence is not a zero-length epoch."""
+    store = RunStore.local(tmp_path)
+    run = store.record(
+        Run(
+            id="",
+            dataset="d",
+            dataset_version=1,
+            label_set="d",
+            model="m",
+            model_version="1",
+            classes=["a"],
+        ),
+        {"loss": 0.2},
+    )
+
+    assert store.curve(run.id) == []
+
+
+def test_a_curve_does_not_reach_the_history(tmp_path):
+    """`history` plots one point per run, not one per epoch."""
+    store = RunStore.local(tmp_path)
+    store.record(
+        Run(
+            id="",
+            dataset="d",
+            dataset_version=1,
+            label_set="d",
+            model="m",
+            model_version="1",
+            classes=["a"],
+        ),
+        {"val_accuracy": 0.9},
+        curve=[(1, {"val_accuracy": 0.1}), (2, {"val_accuracy": 0.5})],
+    )
+
+    assert [v for _, _, v in store.history("d", "val_accuracy")] == [0.9]

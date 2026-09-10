@@ -85,12 +85,24 @@ class RunStore:
 
     # ------------------------------------------------------------------
 
-    def record(self, run: Run, metrics: dict[str, float]) -> Run:
-        """Write a completed run and its final metrics.
+    def record(
+        self,
+        run: Run,
+        metrics: dict[str, float],
+        curve: list[tuple[int, dict[str, float]]] | None = None,
+    ) -> Run:
+        """Write a completed run, its final metrics, and its training curve.
 
         The id is minted here, where the run happened, and is unique without
         asking anyone — which is what lets a laptop train offline and fold
         its history into the main store later.
+
+        ``curve`` is what the model reported as it went, ``(epoch,
+        metrics)`` oldest first. It is written here rather than as it
+        arrived because the run row does not exist until now and the metric
+        rows point at it — and because a run should appear in this store
+        only once it finished. A round that died halfway leaves no curve for
+        the same reason it leaves no run.
         """
         origin = run.origin or socket.gethostname()
         run_id = run.id or new_run_id(origin)
@@ -112,9 +124,30 @@ class RunStore:
                 )
             )
             self._write_metrics(conn, run_id, metrics)
+            for epoch, reported in curve or ():
+                self._write_metrics(conn, run_id, reported, epoch=epoch)
         return run.model_copy(
             update={"id": run_id, "origin": origin, "metrics": metrics}
         )
+
+    def curve(self, run_id: str) -> list[tuple[int, dict[str, float]]]:
+        """What a run reported as it trained, oldest epoch first.
+
+        Separate from :meth:`get` rather than a field on :class:`Run`,
+        because every caller that reads a run wants its final numbers and
+        only a chart wants the rest — and there are as many curve rows as
+        epochs times metrics.
+        """
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                select(t.metric.c.epoch, t.metric.c.name, t.metric.c.value)
+                .where((t.metric.c.run_id == run_id) & (t.metric.c.epoch.is_not(None)))
+                .order_by(t.metric.c.epoch)
+            ).all()
+        by_epoch: dict[int, dict[str, float]] = {}
+        for epoch, name, value in rows:
+            by_epoch.setdefault(epoch, {})[name] = value
+        return sorted(by_epoch.items())
 
     def _write_metrics(self, conn, run_id: str, metrics: dict[str, float], epoch=None) -> None:
         for name, value in metrics.items():
