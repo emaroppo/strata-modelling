@@ -103,7 +103,7 @@ def fixture_dataset(tmp_path):
                     id=i,
                     checksum=f"{i:064x}",
                     path=f"files/{name}",
-                    val=i >= 3,
+                    split="val" if i >= 3 else "train",
                     value=Choices(values=["a"]),
                 )
             )

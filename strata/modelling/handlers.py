@@ -188,12 +188,17 @@ def _examples(directory: Path, manifest: dict) -> tuple[list[Example], list[Exam
         if sample.get("value") is None:
             # Skipped: reviewed, nothing applicable, not training data
             continue
+        if sample["split"] == "holdout":
+            # Kept back to measure what training and selection never saw. A
+            # model shown it — even as validation, even once — is a model it
+            # can no longer measure honestly.
+            continue
         example = Example(
             path=Path(directory) / sample["path"],
             target=_VALUE.validate_python(sample["value"]),
             features=sample.get("features") or {},
         )
-        (val_examples if sample.get("val") else train_examples).append(example)
+        (val_examples if sample["split"] == "val" else train_examples).append(example)
     return train_examples, val_examples
 
 

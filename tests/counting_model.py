@@ -35,6 +35,7 @@ class CountingModel(Model):
             "accuracy": self.bias,
             "val_accuracy": self.bias / 2,
             "n_train": float(len(train)),
+            "n_val": float(len(val or [])),
         }
 
     def predict(self, paths, on_batch=None, *, features=None):

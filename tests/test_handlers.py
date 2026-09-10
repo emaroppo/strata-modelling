@@ -62,6 +62,26 @@ def test_the_split_from_the_manifest_reaches_the_model(store, dataset_dir):
     assert run.metrics["n_train"] == 7
 
 
+def test_a_holdout_never_reaches_the_model(store, dataset_dir):
+    """Not as training data, and not as validation either.
+
+    A holdout exists to measure what search and selection never saw; a
+    model scored on it during training has seen it.
+    """
+    root = dataset_dir(n_train=6, n_val=3)
+    manifest = json.loads((root / "manifest.json").read_text())
+    kept_back = [s for s in manifest["samples"] if s["split"] == "train"][:2] + [
+        s for s in manifest["samples"] if s["split"] == "val"
+    ][:1]
+    for sample in kept_back:
+        sample["split"] = "holdout"
+    (root / "manifest.json").write_text(json.dumps(manifest))
+
+    run = train(TrainRequest(dataset_dir=root, model=COUNTER), store)
+    assert run.metrics["n_train"] == 4
+    assert run.metrics["n_val"] == 2
+
+
 def test_skipped_samples_are_not_training_data(store, dataset_dir):
     run = train(
         TrainRequest(dataset_dir=dataset_dir(n_train=5, n_val=2, n_skipped=4), model=COUNTER),
