@@ -38,6 +38,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from strata.catalog.features import digest_of as feature_digest
 from strata.labels import AnyPrediction, Prediction
 
 from .handlers import train as run_train
@@ -94,6 +95,11 @@ class PredictionRequest(BaseModel):
 
     run_id: str
     checksums: list[str] = Field(default_factory=list)
+    #: What the model is to be told about each sample, by checksum. Keyed
+    #: rather than positional because the response is keyed too, and a
+    #: caller that has to keep two lists aligned across a wire eventually
+    #: does not.
+    features: dict[str, dict] = Field(default_factory=dict)
 
 
 class PredictionResponse(BaseModel):
@@ -319,7 +325,12 @@ def run_prediction(
     # Kept beside the runs, so the answer is the same for every caller
     # rather than for whichever machine asked first.
     known = PredictionCache.beside(store)
-    already = known.get(request.run_id, request.checksums)
+    # The host's cache is keyed on the same three inputs the caller's is:
+    # a checkpoint, some bytes, and what the model was told. Computed here
+    # from what arrived rather than sent, so the two sides cannot drift on
+    # how a digest is taken.
+    digests = {c: feature_digest(request.features.get(c, {})) for c in request.checksums}
+    already = known.get(request.run_id, request.checksums, digests)
     wanted = [c for c in request.checksums if c not in already]
 
     def fetching(done: int, total: int) -> None:
@@ -340,12 +351,16 @@ def run_prediction(
 
         ordered = list(paths)
         outputs = run_predict(
-            PredictRequest(run_id=request.run_id, paths=[paths[c] for c in ordered]),
+            PredictRequest(
+                run_id=request.run_id,
+                paths=[paths[c] for c in ordered],
+                features=[request.features.get(c, {}) for c in ordered],
+            ),
             store,
             on_batch=scoring,
         )
         made = {c: o.value for c, o in zip(ordered, outputs, strict=True)}
-        known.put(request.run_id, made)
+        known.put(request.run_id, made, digests)
 
     return PredictionResponse(predictions={**already, **made}, unknown=unknown)
 
