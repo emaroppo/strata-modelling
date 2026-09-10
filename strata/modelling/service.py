@@ -423,29 +423,30 @@ def build():
         return Catalog.connect(catalog_url, _blobs())
 
     def _blobs():
-        endpoint = os.environ.get("STRATA_S3_ENDPOINT")
-        if not endpoint:
-            from strata.catalog import LocalBackend
+        # Built by the same code the CLI uses, so the two cannot open a
+        # bucket differently. Described from the environment until this
+        # host reads a catalog file of its own.
+        from strata.catalog.config import CatalogConfig, blobs_for
 
-            return LocalBackend(Path(_required(
+        endpoint = os.environ.get("STRATA_S3_ENDPOINT", "")
+        if endpoint:
+            bucket = _required("STRATA_S3_BUCKET", "An endpoint without a bucket names nothing.")
+            local = None
+        else:
+            bucket = ""
+            local = Path(_required(
                 "STRATA_BLOBS_ROOT", "With no S3 endpoint the host reads files."
-            )))
-        import boto3
-        from botocore.config import Config
-
-        from strata.catalog.s3 import S3Backend
-
-        client = boto3.client(
-            "s3",
-            endpoint_url=endpoint,
-            aws_access_key_id=os.environ.get("STRATA_S3_ACCESS_KEY") or None,
-            aws_secret_access_key=os.environ.get("STRATA_S3_SECRET_KEY") or None,
-            region_name=os.environ.get("STRATA_S3_REGION", "garage"),
-            config=Config(s3={"addressing_style": "path"}),
+            ))
+        return blobs_for(
+            CatalogConfig(
+                s3_endpoint=endpoint,
+                s3_bucket=bucket,
+                s3_region=os.environ.get("STRATA_S3_REGION", "garage"),
+                s3_access_key=os.environ.get("STRATA_S3_ACCESS_KEY", ""),
+                s3_secret_key=os.environ.get("STRATA_S3_SECRET_KEY", ""),
+            ),
+            local=local,
         )
-        return S3Backend(client, bucket=_required(
-            "STRATA_S3_BUCKET", "An endpoint without a bucket names nothing."
-        ))
 
     def authorise(authorization: str = Header(default="")) -> None:
         import hmac
