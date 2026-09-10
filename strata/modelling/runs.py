@@ -9,6 +9,7 @@ from sqlalchemy.engine import Engine
 
 from . import tables as t
 from .requests import Run
+from .schema_version import stamp_if_new
 
 
 def host_token(name: str | None = None) -> str:
@@ -76,6 +77,7 @@ class RunStore:
         path = root / "runs.db"
         engine = create_engine(f"sqlite:///{path}")
         t.metadata.create_all(engine)
+        stamp_if_new(engine)
         _refuse_a_store_from_before_string_ids(engine, path)
         return cls(engine, root / "checkpoints")
 
