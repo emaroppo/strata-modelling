@@ -23,10 +23,13 @@ image = [
     "timm>=1.0",
     "torch>=2.0",
     "torchvision>=0.15",
+    # The baselines show progress; nothing else here does.
+    "rich>=13.0",
 ]
 text = [
     "torch>=2.0",
     "transformers>=4.40",
+    "rich>=13.0",
 ]
 all = [
     "strata-modelling[image,text]",

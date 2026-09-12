@@ -17,15 +17,6 @@ from typing import ClassVar
 
 import torch
 import torch.nn as nn
-from rich import get_console
-from rich.progress import (
-    BarColumn,
-    MofNCompleteColumn,
-    Progress,
-    TextColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
 from torch.utils.data import DataLoader, Dataset
 from transformers import (
     AutoModelForSequenceClassification,
@@ -36,13 +27,7 @@ from transformers import (
 from strata.labels import ChoicesPrediction, Span, SpansPrediction
 
 from ..model import Example, Model
-
-#: The console rich itself hands out, not one of our own. Two Console
-#: objects writing to one terminal cannot coordinate: a live display owned
-#: by one knows nothing about text printed through the other, and the two
-#: fight over the same lines — which is what made a progress bar flicker
-#: against a model's own output.
-console = get_console()
+from ._shared import console, epoch_progress, pick_device, predict_progress, threshold_choices
 
 DEFAULT_ENCODER = "distilbert-base-uncased"
 
@@ -287,14 +272,7 @@ class _TransformerBase(Model):
         self.window = window
         self.window_overlap = window_overlap if window_overlap is not None else 128
         self.window_aggregation = window_aggregation
-        self.device = torch.device(
-            device
-            or (
-                "cuda"
-                if torch.cuda.is_available()
-                else "mps" if torch.backends.mps.is_available() else "cpu"
-            )
-        )
+        self.device = pick_device(device)
         self.classes: list[str] = []
         self._tokenizer = None
         self._model = None
@@ -456,14 +434,7 @@ class _TransformerBase(Model):
         self._model.train()
         total_loss = 0.0
         seen = 0
-        with Progress(
-            TextColumn("[bold cyan]Epoch {task.fields[epoch]}/{task.fields[total_epochs]}"),
-            BarColumn(),
-            MofNCompleteColumn(),
-            TextColumn("loss={task.fields[loss]:.4f}"),
-            TimeElapsedColumn(),
-            TimeRemainingColumn(),
-        ) as progress:
+        with epoch_progress("loss={task.fields[loss]:.4f}") as progress:
             task = progress.add_task(
                 "training", total=total_steps, epoch=1,
                 total_epochs=self.num_epochs, loss=0.0,
@@ -521,13 +492,7 @@ class _TransformerBase(Model):
             raise RuntimeError("Model has no weights. Call finetune() or load() first.")
         self._model.eval()
         outputs = []
-        with torch.no_grad(), Progress(
-            TextColumn("[bold cyan]Predicting"),
-            BarColumn(),
-            MofNCompleteColumn(),
-            TimeElapsedColumn(),
-            TimeRemainingColumn(),
-        ) as progress:
+        with torch.no_grad(), predict_progress() as progress:
             task = progress.add_task("predict", total=len(paths))
             for done, path in enumerate(paths, start=1):
                 text = _read_text(path)
@@ -591,11 +556,14 @@ class TextClassifier(_TransformerBase):
                 "'text-multiclass', whose softmax head names exactly one."
             )
 
+    #: How the head is trained: several labels may be on at once.
+    problem_type: ClassVar[str] = "multi_label_classification"
+
     def _build_model(self, num_labels: int):
         return AutoModelForSequenceClassification.from_pretrained(
             self.encoder,
             num_labels=num_labels,
-            problem_type="multi_label_classification",
+            problem_type=self.problem_type,
             # The encoder may already carry a head for someone else's classes;
             # ours is sized for this project's, so re-initialise it
             ignore_mismatched_sizes=True,
@@ -655,15 +623,7 @@ class TextClassifier(_TransformerBase):
         )
 
     def _decode(self, text: str, logits: torch.Tensor, offsets) -> ChoicesPrediction:
-        probs = torch.sigmoid(logits.float())
-        indices = (probs > 0.5).nonzero(as_tuple=True)[0].tolist()
-        if not indices:
-            indices = [int(probs.argmax().item())]
-        indices.sort(key=lambda i: probs[i].item(), reverse=True)
-        return ChoicesPrediction(
-            values=[self.classes[i] for i in indices],
-            confidences=[round(probs[i].item(), 4) for i in indices],
-        )
+        return threshold_choices(torch.sigmoid(logits.float()), self.classes)
 
 
 class TextMulticlassClassifier(TextClassifier):
@@ -702,13 +662,7 @@ class TextMulticlassClassifier(TextClassifier):
         # first class every time a reviewer found nothing.
         return bool(getattr(target, "values", None))
 
-    def _build_model(self, num_labels: int):
-        return AutoModelForSequenceClassification.from_pretrained(
-            self.encoder,
-            num_labels=num_labels,
-            problem_type="single_label_classification",
-            ignore_mismatched_sizes=True,
-        ).to(self.device)
+    problem_type: ClassVar[str] = "single_label_classification"
 
     def _item(self, fields: dict, text: str, offsets, target) -> dict:
         # A class index rather than a multi-hot row, which is what

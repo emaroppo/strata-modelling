@@ -6,21 +6,13 @@ import timm
 import torch
 import torch.nn as nn
 from PIL import Image, ImageFile
-from rich import get_console
-from rich.progress import (
-    BarColumn,
-    MofNCompleteColumn,
-    Progress,
-    TextColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
 from strata.labels import ChoicesPrediction
 
 from ..model import Example, Model
+from ._shared import console, epoch_progress, pick_device, predict_progress, threshold_choices
 
 # Video-extracted frames are occasionally cut short; decode what's there
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -42,12 +34,6 @@ def _load_rgb(path: str | Path, draft_size: int | None = None) -> Image.Image:
         return Image.new("RGB", (256, 256))
 
 
-#: The console rich itself hands out, not one of our own. Two Console
-#: objects writing to one terminal cannot coordinate: a live display owned
-#: by one knows nothing about text printed through the other, and the two
-#: fight over the same lines — which is what made a progress bar flicker
-#: against a model's own output.
-console = get_console()
 
 
 class _ImageDataset(Dataset):
@@ -139,14 +125,7 @@ class MultiLabelClassifier(Model):
         self.num_epochs = num_epochs
         self.batch_size = batch_size
         self.lr = lr
-        self.device = torch.device(
-            device
-            or (
-                "cuda"
-                if torch.cuda.is_available()
-                else "mps" if torch.backends.mps.is_available() else "cpu"
-            )
-        )
+        self.device = pick_device(device)
         self.classes: list[str] = []
         self._backbone: nn.Module | None = None
 
@@ -245,15 +224,7 @@ class MultiLabelClassifier(Model):
         return torch.sigmoid(logits.float())
 
     def _to_output(self, probs: torch.Tensor) -> ChoicesPrediction:
-        indices = (probs > 0.5).nonzero(as_tuple=True)[0].tolist()
-        if not indices:
-            # Fall back to argmax when nothing clears the threshold
-            indices = [int(probs.argmax().item())]
-        indices.sort(key=lambda i: probs[i].item(), reverse=True)
-        return ChoicesPrediction(
-            values=[self.classes[i] for i in indices],
-            confidences=[round(probs[i].item(), 4) for i in indices],
-        )
+        return threshold_choices(probs, self.classes)
 
     @property
     def _train_transform(self):
@@ -338,16 +309,7 @@ class MultiLabelClassifier(Model):
         total_correct = 0
         total_samples = 0
 
-        with Progress(
-            TextColumn(
-                "[bold cyan]Epoch {task.fields[epoch]}/{task.fields[total_epochs]}"
-            ),
-            BarColumn(),
-            MofNCompleteColumn(),
-            TextColumn("loss={task.fields[loss]:.4f} acc={task.fields[acc]:.3f}"),
-            TimeElapsedColumn(),
-            TimeRemainingColumn(),
-        ) as progress:
+        with epoch_progress("loss={task.fields[loss]:.4f} acc={task.fields[acc]:.3f}") as progress:
             epoch_task = progress.add_task(
                 "training",
                 total=self.num_epochs * len(loader),
@@ -479,16 +441,7 @@ class MultiLabelClassifier(Model):
             backbone = torch.compile(self._backbone)
 
         batch_probs: list[torch.Tensor] = []
-        with (
-            torch.no_grad(),
-            Progress(
-                TextColumn("[bold cyan]Predicting"),
-                BarColumn(),
-                MofNCompleteColumn(),
-                TimeElapsedColumn(),
-                TimeRemainingColumn(),
-            ) as progress,
-        ):
+        with torch.no_grad(), predict_progress() as progress:
             predict_task = progress.add_task("predict", total=len(image_paths))
             done = 0
             for batch in loader:
@@ -583,14 +536,9 @@ class PresenceClassifier(MultiLabelClassifier):
         return [c for c in classes if c != self.NEGATIVE_LABEL]
 
     def _to_output(self, probs: torch.Tensor) -> ChoicesPrediction:
-        indices = (probs > 0.5).nonzero(as_tuple=True)[0].tolist()
-        if not indices:
+        if not bool((probs > 0.5).any()):
             return ChoicesPrediction(
                 values=[self.NEGATIVE_LABEL],
                 confidences=[round(1.0 - probs.max().item(), 4)],
             )
-        indices.sort(key=lambda i: probs[i].item(), reverse=True)
-        return ChoicesPrediction(
-            values=[self.classes[i] for i in indices],
-            confidences=[round(probs[i].item(), 4) for i in indices],
-        )
+        return threshold_choices(probs, self.classes)
