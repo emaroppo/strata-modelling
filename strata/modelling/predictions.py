@@ -32,9 +32,10 @@ but the first.
 from pathlib import Path
 
 from pydantic import TypeAdapter
-from sqlalchemy import create_engine, delete, func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from strata.common import database
 from strata.labels import AnyPrediction, Prediction
 
 from . import tables as t
@@ -59,7 +60,7 @@ class PredictionCache:
         """The same database the runs are in, since it is keyed on them."""
         root = Path(root)
         root.mkdir(parents=True, exist_ok=True)
-        engine = create_engine(f"sqlite:///{root / 'runs.db'}")
+        engine = database.engine(f"sqlite:///{root / 'runs.db'}")
         t.metadata.create_all(engine)
         return cls(engine)
 

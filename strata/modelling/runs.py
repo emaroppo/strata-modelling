@@ -4,9 +4,10 @@ import socket
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import create_engine, delete, insert, select
+from sqlalchemy import delete, insert, select
 from sqlalchemy.engine import Engine
 
+from strata.common import database
 from strata.common.migrations import require_current, stamp_if_new
 
 from . import tables as t
@@ -77,7 +78,7 @@ class RunStore:
         root = Path(root)
         root.mkdir(parents=True, exist_ok=True)
         path = root / "runs.db"
-        engine = create_engine(f"sqlite:///{path}")
+        engine = database.engine(f"sqlite:///{path}")
         from sqlalchemy import inspect
 
         empty = not inspect(engine).has_table("run")
