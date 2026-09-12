@@ -142,21 +142,13 @@ class Model(ABC):
     ) -> list[AnyPrediction]:
         """One prediction per path, in order.
 
-        ``features`` is positional against ``paths``, the way a
-        prediction's confidences are positional against its values: the nth
-        entry belongs to the nth path. None where the project declares no
-        features, which is why it defaults rather than being required.
+        ``features`` is positional against ``paths``: the nth entry belongs
+        to the nth path. None where the project declares none. Keyword-only
+        because it arrived after ``on_batch`` (``docs/adr/0011``).
 
-        Keyword-only because it arrived after ``on_batch`` and inserting it
-        before would silently rebind every existing positional call.
-
-        ``on_batch(done, total)`` is called as scoring proceeds, for the same
-        reason :meth:`finetune` takes ``on_epoch``: ranking a review queue
-        means scoring every unlabelled sample, and a caller on another
-        machine cannot see it happen. Calling it is optional and a model
-        that ignores it still conforms — but it has to accept one, because
-        refusing fails a scoring pass minutes in rather than failing the
-        contract.
+        ``on_batch(done, total)`` is called as scoring proceeds, like
+        :meth:`finetune`'s ``on_epoch``. A model may ignore it but has to
+        accept it, or a scoring pass fails minutes in.
         """
         ...
 
