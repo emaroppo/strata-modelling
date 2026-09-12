@@ -617,18 +617,6 @@ def build():
 
 def main() -> None:
     """Entry point. Serves until stopped."""
-    import sys
+    from strata.common.service import serve
 
-    import uvicorn
-
-    try:
-        app = build()
-    except ServiceError as e:
-        print(f"strata-modelling: {e}", file=sys.stderr)
-        raise SystemExit(2) from None
-
-    uvicorn.run(
-        app,
-        host=os.environ.get("STRATA_SERVE_HOST", "0.0.0.0"),  # noqa: S104
-        port=int(os.environ.get("STRATA_SERVE_PORT", "8082")),
-    )
+    serve(build, prog="strata-modelling", port=8082, error=ServiceError)

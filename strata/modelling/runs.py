@@ -7,9 +7,11 @@ from pathlib import Path
 from sqlalchemy import create_engine, delete, insert, select
 from sqlalchemy.engine import Engine
 
+from strata.common.migrations import require_current, stamp_if_new
+
 from . import tables as t
 from .requests import Run
-from .schema_version import require_current, stamp_if_new
+from .schema_version import MIGRATIONS
 
 
 def host_token(name: str | None = None) -> str:
@@ -81,9 +83,9 @@ class RunStore:
         empty = not inspect(engine).has_table("run")
         t.metadata.create_all(engine)
         if empty:
-            stamp_if_new(engine)
+            stamp_if_new(engine, MIGRATIONS)
         else:
-            require_current(engine, "modelling")
+            require_current(engine, MIGRATIONS, "modelling")
         _refuse_a_store_from_before_string_ids(engine, path)
         return cls(engine, root / "checkpoints")
 

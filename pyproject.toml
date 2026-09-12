@@ -5,6 +5,9 @@ description = "Train and predict over a materialised dataset; model plugins, run
 requires-python = ">=3.13"
 dependencies = [
     "strata-labels>=0.1,<0.2",
+    # The migration plumbing and the entry-point resolver. Its migrations
+    # extra is sqlalchemy and alembic, which this package needs anyway.
+    "strata-common[migrations]>=0.1,<0.2",
     "sqlalchemy>=2.0",
     # Schema changes are migrations, not create_all: an existing database
     # never gains a column from metadata alone. See strata-modelling-migrate.
@@ -35,6 +38,7 @@ test = ["pytest>=8.0"]
 # and a manifest, so it stays testable with neither a catalog nor a database.
 service = [
     "strata-catalog>=0.1,<0.2",
+    "strata-common[service]>=0.1,<0.2",
     "fastapi>=0.100",
     "uvicorn>=0.20",
 ]
@@ -60,6 +64,7 @@ text-span = "strata.modelling.baselines.text_classifier:TextSpanTagger"
 
 [tool.uv.sources]
 strata-labels = { workspace = true }
+strata-common = { workspace = true }
 strata-catalog = { workspace = true }
 
 [build-system]

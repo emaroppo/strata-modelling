@@ -15,6 +15,8 @@ import sys
 from importlib.metadata import entry_points
 from pathlib import Path
 
+from strata.common import plugins
+
 from .model import Model
 
 #: Where an installed distribution advertises the models it provides.
@@ -32,7 +34,7 @@ def available() -> dict[str, str]:
     can this backend serve" — it is read from what is installed rather than
     from a list someone maintains.
     """
-    return {ep.name: ep.value for ep in entry_points(group=ENTRY_POINT_GROUP)}
+    return plugins.available(entry_points(group=ENTRY_POINT_GROUP))
 
 
 def absolute(name: str, root: Path | None = None) -> str:
@@ -75,14 +77,13 @@ def resolve(name: str, root: Path | None = None) -> type[Model]:
 
 
 def _from_registry(name: str) -> type[Model]:
-    found = [ep for ep in entry_points(group=ENTRY_POINT_GROUP) if ep.name == name]
-    if not found:
-        known = ", ".join(sorted(available())) or "none installed"
-        raise ModelError(
-            f"No model named {name!r} is registered here (available: {known}). "
-            f"Names with a ':' are treated as a direct reference instead."
-        )
-    entry = found[0]
+    entry = plugins.find(
+        entry_points(group=ENTRY_POINT_GROUP),
+        name,
+        what="model",
+        error=ModelError,
+        hint=" Names with a ':' are treated as a direct reference instead.",
+    )
     try:
         return entry.load()
     except ImportError as exc:

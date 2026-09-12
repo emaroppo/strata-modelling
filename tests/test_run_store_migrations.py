@@ -13,9 +13,10 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from sqlalchemy import create_engine
 
+from strata.common.migrations import script_directory
 from strata.modelling import RunStore
 from strata.modelling import tables as t
-from strata.modelling.schema_version import MIGRATIONS, script_directory
+from strata.modelling.schema_version import MIGRATIONS
 
 
 @pytest.fixture
@@ -43,4 +44,4 @@ def test_a_created_run_store_is_stamped_at_head(tmp_path):
     with store.engine.connect() as conn:
         current = MigrationContext.configure(conn).get_current_revision()
 
-    assert current == script_directory().get_current_head()
+    assert current == script_directory(MIGRATIONS).get_current_head()

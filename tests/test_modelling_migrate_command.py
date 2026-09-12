@@ -3,7 +3,8 @@
 from alembic.migration import MigrationContext
 from sqlalchemy import create_engine
 
-from strata.modelling.schema_version import migrate, script_directory
+from strata.common.migrations import script_directory
+from strata.modelling.schema_version import MIGRATIONS, migrate
 
 
 def test_the_migrate_command_needs_no_alembic_ini(tmp_path, monkeypatch):
@@ -16,4 +17,4 @@ def test_the_migrate_command_needs_no_alembic_ini(tmp_path, monkeypatch):
     [store] = tmp_path.glob("*.db")
     with create_engine(f"sqlite:///{store}").connect() as conn:
         current = MigrationContext.configure(conn).get_current_revision()
-    assert current == script_directory().get_current_head()
+    assert current == script_directory(MIGRATIONS).get_current_head()
