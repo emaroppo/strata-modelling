@@ -25,14 +25,8 @@ def host_token(name: str | None = None) -> str:
 def new_run_id(origin: str | None = None) -> str:
     """A run id: when it happened, and where.
 
-    Unique without coordination, which is what lets a laptop train offline
-    and fold its history into the main store afterwards. Two machines cannot
-    collide because the host differs; one machine cannot collide with itself
-    because the timestamp carries microseconds and training takes minutes.
-
-    Legible on purpose. A random suffix would be unique too, and would say
-    nothing — while the two facts worth knowing about a run you are looking
-    at months later are when it happened and which machine did it.
+    Unique without coordination and legible on purpose. See
+    ``docs/adr/0005``.
     """
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
     return f"{stamp}-{host_token(origin)}"
@@ -41,11 +35,8 @@ def new_run_id(origin: str | None = None) -> str:
 def _refuse_a_store_from_before_string_ids(engine, path: Path) -> None:
     """Say what is wrong, rather than failing on a missing column later.
 
-    Run ids used to autoincrement, which meant something only inside one
-    store — and there were two, both numbering from one. There is no
-    migration: an id minted here and an integer from before it sort against
-    each other by their first digit, so mixing them is worse than starting
-    a store whose history is all of one kind.
+    There is no migration from integer run ids; the store is moved aside.
+    See ``docs/adr/0005``.
     """
     from sqlalchemy import inspect
 
@@ -104,16 +95,9 @@ class RunStore:
     ) -> Run:
         """Write a completed run, its final metrics, and its training curve.
 
-        The id is minted here, where the run happened, and is unique without
-        asking anyone — which is what lets a laptop train offline and fold
-        its history into the main store later.
-
-        ``curve`` is what the model reported as it went, ``(epoch,
-        metrics)`` oldest first. It is written here rather than as it
-        arrived because the run row does not exist until now and the metric
-        rows point at it — and because a run should appear in this store
-        only once it finished. A round that died halfway leaves no curve for
-        the same reason it leaves no run.
+        The id is minted here. ``curve`` is ``(epoch, metrics)`` oldest
+        first, written with the run: a run appears only once it finished,
+        and a round that died halfway leaves neither. See ``docs/adr/0005``.
         """
         origin = run.origin or socket.gethostname()
         run_id = run.id or new_run_id(origin)
@@ -144,10 +128,8 @@ class RunStore:
     def curve(self, run_id: str) -> list[tuple[int, dict[str, float]]]:
         """What a run reported as it trained, oldest epoch first.
 
-        Separate from :meth:`get` rather than a field on :class:`Run`,
-        because every caller that reads a run wants its final numbers and
-        only a chart wants the rest — and there are as many curve rows as
-        epochs times metrics.
+        Separate from :meth:`get` because only a chart wants epochs times
+        metrics.
         """
         with self.engine.connect() as conn:
             rows = conn.execute(
@@ -201,14 +183,8 @@ class RunStore:
     def latest(self, dataset: str, catalog_id: str | None = None) -> Run | None:
         """The newest run over a dataset — what a warm start continues from.
 
-        Scoped to a catalog when one is given, because a dataset name means
-        something within one and a host can serve several.
-
-        A run recorded before catalogs had identities carries none, and that
-        null is *unknown* rather than *some other catalog* — matching it
-        keeps every existing history findable, where excluding it would cold
-        start a project whose runs are all pre-identity. New runs all carry
-        one, so the scoping tightens on its own.
+        Scoped to a catalog when one is given; a run with no catalog
+        recorded matches, since null is unknown. See ``docs/adr/0008``.
         """
         where = t.run.c.dataset == dataset
         if catalog_id is not None:
@@ -228,12 +204,7 @@ class RunStore:
         return self.get(run_id) if run_id is not None else None
 
     def history(self, dataset: str, metric: str) -> list[tuple[str, int, float]]:
-        """``(run id, dataset version, value)`` for one metric, oldest first.
-
-        The question a training history exists to answer, and the reason
-        this is a database: metric progression across rounds is one query
-        rather than a glob over directories.
-        """
+        """``(run id, dataset version, value)`` for one metric, oldest first."""
         with self.engine.connect() as conn:
             return [
                 (r.id, r.dataset_version, r.value)

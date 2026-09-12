@@ -1,23 +1,10 @@
 """Folding one run store into another.
 
-There are two stores by design: a project keeps runs beside its own
-checkpoints, and a modelling host keeps its own. Training moved to the GPU
-host part-way through, so a project's history is now split across both —
-the early rounds on the desktop, the later ones where the GPU is.
-
-This is what puts them back together, and it is only possible because run
-ids stopped being integers. Two stores numbering from one produced the same
-id for different models with nothing to say so; an id that is a timestamp
-and a host token is unique without anyone coordinating, which is exactly
-the property a merge needs.
-
-Checkpoints are the awkward part and are left behind by default. They are
-the large half by orders of magnitude, and a merge is usually done to read
-a history rather than to train from it. A row whose checkpoint did not come
-along has its ``checkpoint`` column cleared rather than left pointing at a
-file on another machine — everything that warm-starts or predicts checks
-that column, and a path that looks real and is not would fail at the far
-end of a long round.
+A project keeps runs beside its checkpoints and a modelling host keeps its
+own; this puts a history split across both back together. Run ids are
+unique across stores, which is what makes it possible. Checkpoints are
+left behind unless asked for, and a run whose checkpoint did not come has
+its column cleared. See ``docs/adr/0005``.
 """
 
 from __future__ import annotations
@@ -86,15 +73,9 @@ def merge_stores(
 ) -> StoreMergeReport:
     """Copy every run ``target`` does not have out of ``source``.
 
-    Ids are globally unique, so an id the target already holds is the same
-    run rather than a collision — this is re-runnable, and a merge
-    interrupted halfway can simply be repeated.
-
-    Runs are copied oldest first so that a parent is in place before the
-    run that continues it. A parent in neither store cannot be honoured:
-    the link is dropped and the run is reported, because a dangling
-    ``parent_run_id`` would make the history claim a lineage it cannot
-    show.
+    Re-runnable: an id the target holds is the same run. Oldest first, so
+    a parent lands before the run that continues it; a parent in neither
+    store is dropped and reported. See ``docs/adr/0005``.
     """
     if source.engine.url == target.engine.url:
         raise StoreMergeError(

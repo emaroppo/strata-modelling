@@ -1,21 +1,7 @@
 """The model catalog's schema: what was trained, from what, and how it did.
 
-Two things here are the reason this is a database rather than a folder of
-JSON.
-
-Runs are a **chain**. Each round warm-starts from the last, so a run has a
-parent and its metrics only mean something relative to it — telling a real
-improvement from a warm start's head start needs the edge, not just the
-node.
-
-Metrics are **rows**. "Accuracy per round" is the single most useful thing
-to ask of a training history, and it should be a query rather than a glob
-over directories and a parse.
-
-Predictions live here too, beside the runs that produced them. A run id
-means something only within one store, so a cache keyed on one belongs in
-the same database — and the machine that made a prediction is the one that
-should keep it, because the answer is the same for every caller.
+Runs are a chain, metrics are rows, and predictions live beside the runs
+that produced them. See ``docs/adr/0005`` and ``docs/adr/0006``.
 """
 
 from sqlalchemy import (
@@ -39,11 +25,8 @@ metadata = MetaData()
 run = Table(
     "run",
     metadata,
-    # A timestamp and a random suffix, minted where the run happened. An
-    # autoincrementing integer means something only inside one store, and
-    # there are two: a project keeps runs beside its own checkpoints and a
-    # modelling host keeps its own. Both numbered from one, so the same
-    # number named different models and nothing said so.
+    # A timestamp and a host token, minted where the run happened; unique
+    # across stores without coordination. See docs/adr/0005.
     Column("id", String(40), primary_key=True),
     # What this run continued from. Null for a cold start, which is the only
     # run whose numbers stand entirely on their own.
@@ -51,18 +34,13 @@ run = Table(
     # Which machine trained it. Provenance is a column rather than part of
     # the id: an id is immutable and a machine can be renamed or handed on.
     Column("origin", String(64), nullable=True),
-    # Which catalog the dataset belongs to. A dataset name means something
-    # within one, and a host can serve more than one — so without this,
-    # "the latest run over demo" is a question with two answers.
+    # Which catalog the dataset belongs to; a dataset name means something
+    # within one. Null is unknown, not "some other". See docs/adr/0008.
     Column("catalog_id", String(64), nullable=True),
     # Lineage back into the catalog: these three resolve to the exact
     # samples and annotations behind the checkpoint.
     Column("dataset", String(255), nullable=False),
-    # Null when no dataset version describes what the run trained on, which
-    # is the state of anything imported from before the catalog existed. A
-    # round number is not a dataset version, and standing one in for the
-    # other made an imported round read as though it shared data with a
-    # catalog one that happened to carry the same number.
+    # Null when no dataset version describes what the run trained on.
     Column("dataset_version", Integer, nullable=True),
     Column("label_set", String(255), nullable=False),
     Column("model", String(255), nullable=False),
@@ -71,8 +49,8 @@ run = Table(
     # checkpoint whose neurons no longer match its class list fails silently.
     Column("model_version", String(32), nullable=False),
     Column("params", JSON, nullable=True),
-    # The class list *as trained*, by position. The label set can gain
-    # classes afterwards; this is what the checkpoint actually encodes.
+    # The class list *as trained*, by position: what the checkpoint encodes.
+    # See docs/adr/0005.
     Column("classes", JSON, nullable=False),
     Column("checkpoint", Text, nullable=True),
     Column("created_at", DateTime, server_default=func.now()),
