@@ -183,11 +183,9 @@ def _read_manifest(directory: Path) -> Manifest:
 def examples(directory: Path, manifest: Manifest) -> tuple[list[Example], list[Example]]:
     """What a model is handed from a materialised dataset: training, then validation.
 
-    Read through the manifest's own definition rather than by key name, so
-    a field the writer renamed fails here instead of arriving as nothing.
-    Public because it is what a trainer is handed — the last layer between
-    a reviewer's answer and a model — and modelling's label-type tests read
-    every type through it.
+    Read through the manifest's own definition. Public because it is the
+    last layer between a reviewer's answer and a model, and every label
+    type is tested through it. See ``docs/adr/0004``.
     """
     train_examples, val_examples = [], []
     for sample in manifest.samples:

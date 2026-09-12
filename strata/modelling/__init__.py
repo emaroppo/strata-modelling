@@ -9,24 +9,11 @@ to the exact samples and annotations that produced it.
 
 **May not import:** ``strata.labeller``, or Label Studio.
 
-The training core takes a directory and a manifest — nothing else. The
-service layer materialises a dataset before invoking it, which keeps the
-catalog dependency in a thin outer shell rather than running through the
-training code, and keeps the core testable against a fixture directory.
-
-Two properties this has to record that are easy to leave out:
-
-- **Runs are a chain, not a set.** Rounds warm-start from the previous
-  checkpoint, so a run has a parent and its metrics only mean something
-  relative to it.
-- **The class list belongs on the run.** Checkpoints map output neurons to
-  classes by position, so a warm start from a checkpoint whose class list
-  has since been reordered corrupts silently rather than failing.
-
-Predictions are returned by the core, not written: persisting them is the
-caller's business, and doing it here would put the catalog back into it.
-``PredictionCache`` is that persistence, and it lives beside the runs
-because a prediction is a function of a checkpoint and some bytes.
+The training core takes a directory and a manifest, nothing else
+(``docs/adr/0004``); the service layer materialises before invoking it.
+Runs are a chain and carry the class list as trained (``docs/adr/0005``).
+Predictions are returned by the core, not written; ``PredictionCache`` is
+that persistence (``docs/adr/0006``).
 """
 
 from .handlers import TrainingError, examples, predict, train
