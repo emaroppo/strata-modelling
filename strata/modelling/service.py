@@ -287,7 +287,7 @@ def run_round(
     check_servable(request.model)
 
     check_catalog(request.catalog_id, catalog.id)
-    check_dataset(request, catalog.dataset_named(request.dataset_id))
+    check_dataset(request, catalog.datasets.named(request.dataset_id))
     specs = check_features(request)
 
     def tick(done: int, total: int) -> None:
@@ -513,7 +513,7 @@ def build():
             # for a round which cannot run learns nothing until it polls
             check_catalog(request.catalog_id, served_catalog_id())
             try:
-                found = catalog_for().dataset_named(request.dataset_id)
+                found = catalog_for().datasets.named(request.dataset_id)
             except CatalogError as e:
                 raise ServiceError(str(e)) from None
             check_dataset(request, found)

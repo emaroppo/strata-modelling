@@ -72,7 +72,11 @@ class FakeCatalog:
         self._write = write
         self.materialised = 0
 
-    def dataset_named(self, dataset_id):
+    @property
+    def datasets(self):
+        return self
+
+    def named(self, dataset_id):
         return DatasetRef(self.name, self.version, None)
 
     def materialise(self, dataset_id, dest, on_progress=None, cache=None, features=None):
