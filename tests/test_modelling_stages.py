@@ -201,7 +201,8 @@ def test_evaluate_scores_one_side_by_one_implementation(store, dataset_dir):
 
     # The counting model predicts the first class, which is every answer
     assert (scored.side, scored.samples, scored.where) == ("holdout", 3, "local")
-    assert scored.metrics == {"accuracy": 1.0, "precision": 1.0, "recall": 1.0, "f1": 1.0}
+    assert scored.metrics == {"exact_match": 1.0, "precision": 1.0, "recall": 1.0, "f1": 1.0}
+    assert scored.per_class["cat"].support == 3 and scored.per_class["cat"].f1 == 1.0
 
 
 def test_evaluate_can_score_validation_too(store, dataset_dir):
@@ -240,9 +241,14 @@ def test_a_wrong_answer_is_counted(store, dataset_dir):
     path.write_text(json.dumps(payload))
 
     scored = evaluate(EvaluateRequest(run_id=record.run_id, dataset_dir=directory), Context(store))
-    assert scored.metrics["accuracy"] == pytest.approx(0.75)
+    assert scored.metrics["exact_match"] == pytest.approx(0.75)
     assert scored.metrics["precision"] == pytest.approx(0.75)
     assert scored.metrics["recall"] == pytest.approx(0.75)
+    # Per class: cat was asserted on three and guessed on four; dog asserted
+    # on one and never guessed
+    assert scored.per_class["cat"].precision == pytest.approx(0.75)
+    assert scored.per_class["cat"].recall == 1.0
+    assert scored.per_class["dog"] .recall == 0.0 and scored.per_class["dog"].support == 1
 
 
 def test_an_empty_side_is_refused(store, dataset_dir):
@@ -285,4 +291,4 @@ def test_evaluate_asks_the_host_when_there_is_one(dataset_dir):
         Context(store=None, host=Host("http://gpu", "t"), client=Scores),
     )
     assert scored.where == "remote" and scored.samples == 2
-    assert scored.metrics["accuracy"] == 1.0
+    assert scored.metrics["exact_match"] == 1.0

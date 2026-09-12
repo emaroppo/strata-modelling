@@ -225,13 +225,28 @@ class EvaluateRequest(Strict):
     side: Literal["val", "holdout"] = "holdout"
 
 
+class ClassScore(Strict):
+    precision: float
+    recall: float
+    f1: float
+    #: How many held-out samples assert the class.
+    support: int
+
+
 class EvaluateRecord(Strict):
     run_id: str
     side: str
     where: Literal["local", "remote"]
     #: Samples with an answer on that side; the denominator.
     samples: int
+    #: ``exact_match`` is the share of samples whose asserted set of classes
+    #: is exactly the model's; ``precision``, ``recall`` and ``f1`` are micro,
+    #: over every class assertion. A label set that carries two classes per
+    #: sample scored by a model that asserts one has an exact match of zero
+    #: and a precision worth reading, which is why both are here and neither
+    #: is called accuracy.
     metrics: dict[str, float]
+    per_class: dict[str, ClassScore] = Field(default_factory=dict)
 
 
 def evaluate(request: EvaluateRequest, context: Context) -> EvaluateRecord:
@@ -252,29 +267,46 @@ def evaluate(request: EvaluateRequest, context: Context) -> EvaluateRecord:
         )
     predictions, where = _predictions(request, context, samples)
 
-    exact = tp = fp = fn = 0
+    exact = 0
+    counts: dict[str, list[int]] = {}  # class -> [tp, fp, fn]
     for sample in samples:
         truth = set(sample.value.values)
         guessed = set(predictions[sample.checksum].values)
         exact += truth == guessed
-        tp += len(truth & guessed)
-        fp += len(guessed - truth)
-        fn += len(truth - guessed)
-    precision = tp / (tp + fp) if tp + fp else 0.0
-    recall = tp / (tp + fn) if tp + fn else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        for name in truth | guessed:
+            tally = counts.setdefault(name, [0, 0, 0])
+            tally[0] += name in truth and name in guessed
+            tally[1] += name in guessed and name not in truth
+            tally[2] += name in truth and name not in guessed
+    tp = sum(t[0] for t in counts.values())
+    fp = sum(t[1] for t in counts.values())
+    fn = sum(t[2] for t in counts.values())
+    precision, recall, f1 = _prf(tp, fp, fn)
     return EvaluateRecord(
         run_id=request.run_id,
         side=request.side,
         where=where,
         samples=len(samples),
         metrics={
-            "accuracy": exact / len(samples),
+            "exact_match": exact / len(samples),
             "precision": precision,
             "recall": recall,
             "f1": f1,
         },
+        per_class={name: _class_score(tally) for name, tally in sorted(counts.items())},
     )
+
+
+def _class_score(tally: list[int]) -> ClassScore:
+    precision, recall, f1 = _prf(*tally)
+    return ClassScore(precision=precision, recall=recall, f1=f1, support=tally[0] + tally[2])
+
+
+def _prf(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
+    precision = tp / (tp + fp) if tp + fp else 0.0
+    recall = tp / (tp + fn) if tp + fn else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    return precision, recall, f1
 
 
 def _predictions(request: EvaluateRequest, context: Context, samples) -> tuple[dict, str]:
@@ -337,7 +369,9 @@ def _manifest(directory: Path) -> Manifest:
 
 STAGES = (
     Stage("train", "1", (DATASET_DIR,), RUN, train),
-    Stage("evaluate", "1", (DATASET_DIR, RUN), METRICS, evaluate),
+    # 2: exact_match rather than accuracy, and per-class scores. A record
+    # written by 1 has the old shape, so it is not handed back as this one's.
+    Stage("evaluate", "2", (DATASET_DIR, RUN), METRICS, evaluate),
 )
 
 __all__ = [
@@ -345,6 +379,7 @@ __all__ = [
     "METRICS",
     "RUN",
     "STAGES",
+    "ClassScore",
     "Context",
     "DatasetIdentity",
     "EvaluateRecord",
