@@ -1,30 +1,10 @@
 """Predictions already made, so nobody pays for them twice.
 
-Ranking a review queue needs a score for every unlabelled sample, not just
-the ones about to be shown — least-confident-first cannot pick a top 200
-without having looked at all of them. That is a full inference pass per
-push, and asking again from the same checkpoint pays for an identical
-answer.
-
-**Nothing here is ever invalidated, and that is a property rather than an
-omission.** A prediction is a function of a checkpoint and some bytes.
-Checkpoints are immutable — a run writes one and never rewrites it — and
-blobs are addressed by content. So an entry keyed on both cannot go stale;
-the only reason to drop one is disk.
-
-**It lives beside the runs, which means beside whoever trained.** A run id
-means something only within one store, so a cache keyed on one belongs in
-the same database. It also puts the cache on the machine that does the
-work: an answer is the same for every caller, and a client-side cache would
-help only the machine that happened to ask first, leaving a second machine
-to buy the same minutes of GPU again.
-
-Keyed on the checksum rather than a sample id (``docs/adr/0001``).
-
-It holds whatever a model produced — choices, spans, boxes — and reads it
-back as what it was, through the discriminator. Pinning it to one of them
-would make a cache that quietly refuses, or worse mangles, every task type
-but the first.
+Keyed on the run, the sample's checksum and a digest of its features;
+nothing is ever invalidated, and the only reason to drop a row is disk.
+Lives beside the runs, on the machine that did the work. Holds whatever a
+model produced and reads it back through the discriminator. See
+``docs/adr/0006``.
 """
 
 from pathlib import Path
