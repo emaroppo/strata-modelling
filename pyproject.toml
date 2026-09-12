@@ -53,6 +53,8 @@ strata-modelling = "strata.modelling.service:main"
 # Alembic's commands over the migrations this package ships, so a run store
 # can be brought up to date from an installed wheel.
 strata-modelling-migrate = "strata.modelling.schema_version:migrate"
+# Looking after a run store: folding one into another.
+strata-runs = "strata.modelling.cli:main"
 
 # Short names a request can carry, so a caller need not know an import path.
 # Read from what is installed, which is the only honest answer to "what can
