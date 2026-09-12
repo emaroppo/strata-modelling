@@ -101,8 +101,7 @@ metric = Table(
 #: and that is a property rather than an omission: a prediction is a
 #: function of a checkpoint and some bytes, and both are immutable.
 #:
-#: Keyed on the checksum rather than a sample id, because an id belongs to
-#: one catalog's numbering while the bytes are what the model actually saw.
+#: Keyed on the checksum rather than a sample id (``docs/adr/0001``).
 prediction = Table(
     "prediction",
     metadata,

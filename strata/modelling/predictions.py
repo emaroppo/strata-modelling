@@ -19,9 +19,7 @@ work: an answer is the same for every caller, and a client-side cache would
 help only the machine that happened to ask first, leaving a second machine
 to buy the same minutes of GPU again.
 
-Keyed on the checksum rather than a sample id, for the same reason task
-URLs are: an id belongs to one catalog's numbering, while the bytes are
-what the model actually saw.
+Keyed on the checksum rather than a sample id (``docs/adr/0001``).
 
 It holds whatever a model produced — choices, spans, boxes — and reads it
 back as what it was, through the discriminator. Pinning it to one of them
