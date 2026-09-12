@@ -26,8 +26,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/ubuntu/git/tools/auto-labeller
-EnvironmentFile=/home/ubuntu/git/tools/auto-labeller/deploy/gpu/.env
+WorkingDirectory=/home/ubuntu/git/strata
+EnvironmentFile=/home/ubuntu/git/strata/deploy/gpu/.env
 ExecStart=/home/ubuntu/.local/bin/uv run --extra image --extra service strata-modelling
 
 # A training round is minutes long and a restart mid-round loses it, so the
