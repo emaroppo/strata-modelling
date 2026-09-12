@@ -241,7 +241,7 @@ def check_features(request: RoundRequest) -> list:
     would otherwise fail partway through materialising, after the expensive
     part.
     """
-    from strata.catalog.features import FeatureError, FeatureSpec
+    from strata.catalog.versions.features import FeatureError, FeatureSpec
 
     try:
         return [FeatureSpec.from_dict(raw) for raw in request.features]
