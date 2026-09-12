@@ -19,7 +19,7 @@ from strata.modelling.baselines.text_classifier import span_scores  # noqa: E402
 
 
 def s(label, start, end):
-    return Span(label=label, start=start, end=end, text="x" * (end - start))
+    return Span(labels=[label], start=start, end=end, text="x" * (end - start))
 
 
 def test_a_perfect_prediction_scores_one():

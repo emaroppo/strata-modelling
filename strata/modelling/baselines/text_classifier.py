@@ -893,7 +893,7 @@ class TextSpanTagger(_TransformerBase):
         # value list built separately silently pairs the wrong numbers.
         return SpansPrediction(
             values=[
-                Span(label=label, start=start, end=end, text=text[start:end])
+                Span(labels=[label], start=start, end=end, text=text[start:end])
                 for label, start, end in order
             ],
             confidences=[round(best[key], 4) for key in order],
@@ -914,11 +914,11 @@ class TextSpanTagger(_TransformerBase):
                 continue
             class_name = self.classes[(tag - 1) // 2]
             is_begin = (tag - 1) % 2 == 0
-            if current is not None and not is_begin and current["label"] == class_name:
+            if current is not None and not is_begin and current["labels"] == [class_name]:
                 current["end"] = end
                 current["scores"].append(conf)
             else:
-                current = {"label": class_name, "start": start, "end": end, "scores": [conf]}
+                current = {"labels": [class_name], "start": start, "end": end, "scores": [conf]}
                 spans.append(current)
 
         # Sorted by Spans on the way in, so confidences are ordered to match
@@ -927,7 +927,7 @@ class TextSpanTagger(_TransformerBase):
         return SpansPrediction(
             values=[
                 Span(
-                    label=s["label"],
+                    labels=s["labels"],
                     start=s["start"],
                     end=s["end"],
                     text=text[s["start"] : s["end"]],

@@ -190,8 +190,8 @@ class TestTextSpanTagger(_TextContract):
                 path=path,
                 target=Spans(
                     values=[
-                        Span(label="WORD", start=0, end=5, text="alpha"),
-                        Span(label="OTHER", start=11, end=16, text="gamma"),
+                        Span(labels=["WORD"], start=0, end=5, text="alpha"),
+                        Span(labels=["OTHER"], start=11, end=16, text="gamma"),
                     ]
                 ),
             )

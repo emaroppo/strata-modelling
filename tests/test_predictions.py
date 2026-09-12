@@ -127,7 +127,7 @@ def test_it_holds_whatever_a_model_produced(cache):
         confidences=[0.6],
     )
     spans = SpansPrediction(
-        values=[Span(label="name", start=0, end=4)], confidences=[0.7]
+        values=[Span(labels=["name"], start=0, end=4)], confidences=[0.7]
     )
     cache.put("3", {"a" * 64: boxes, "b" * 64: spans})
 

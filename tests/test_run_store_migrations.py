@@ -45,3 +45,47 @@ def test_a_created_run_store_is_stamped_at_head(tmp_path):
         current = MigrationContext.configure(conn).get_current_revision()
 
     assert current == script_directory(MIGRATIONS).get_current_head()
+
+
+def test_cached_spans_written_with_one_label_are_rewritten(url, monkeypatch):
+    import json
+
+    from sqlalchemy import text
+
+    from strata.labels import SpansPrediction
+
+    monkeypatch.setenv("STRATA_RUNS_URL", url)
+    config = Config()
+    config.set_main_option("script_location", str(MIGRATIONS))
+    config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(config, "882788cac3cf")
+
+    old = {
+        "kind": "spans",
+        "confidences": [0.9],
+        "values": [{"label": "PER", "start": 0, "end": 3, "text": "Ada"}],
+    }
+    choices = {"kind": "choices", "values": ["cat"], "confidences": [0.5]}
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO run (id, dataset, label_set, model, model_version, classes) "
+                "VALUES ('r', 'd', 's', 'm', '1', '[]')"
+            )
+        )
+        for checksum, value in (("a", old), ("b", choices)):
+            conn.execute(
+                text(
+                    "INSERT INTO prediction (run_id, checksum, feature_digest, value) "
+                    "VALUES ('r', :c, '', :v)"
+                ),
+                {"c": checksum, "v": json.dumps(value)},
+            )
+
+    command.upgrade(config, "head")
+
+    with engine.connect() as conn:
+        rows = dict(conn.execute(text("SELECT checksum, value FROM prediction")).all())
+    assert SpansPrediction.model_validate_json(rows["a"]).values[0].labels == ["PER"]
+    assert json.loads(rows["b"]) == choices

@@ -114,7 +114,7 @@ def test_a_span_late_in_a_document_is_still_supervised(tagger):
     window under the old scheme contained it and nothing was trained on it.
     """
     text, start, end = _long_text()
-    target = Spans(values=[Span(label="PER", start=start, end=end, text=text[start:end])])
+    target = Spans(values=[Span(labels=["PER"], start=start, end=end, text=text[start:end])])
     items = tagger._encode(text, target)
 
     begin, inside = tagger._tag_ids("PER")
@@ -139,7 +139,7 @@ def test_a_span_late_in_a_document_is_still_supervised(tagger):
 def test_an_entity_found_by_two_windows_is_reported_once(tagger):
     """The overlap means adjacent windows both see the same entity."""
     text, start, end = _long_text()
-    span = Span(label="PER", start=start, end=end, text=text[start:end])
+    span = Span(labels=["PER"], start=start, end=end, text=text[start:end])
     merged = tagger._merge(
         text,
         [
@@ -161,8 +161,8 @@ def test_merging_keeps_confidences_paired_with_their_spans(tagger):
     guard could see it. This is the bug that has already shipped once.
     """
     text = "x" * 200
-    late = Span(label="PER", start=100, end=110, text=text[100:110])
-    early = Span(label="ORG", start=10, end=20, text=text[10:20])
+    late = Span(labels=["PER"], start=100, end=110, text=text[100:110])
+    early = Span(labels=["ORG"], start=10, end=20, text=text[10:20])
     merged = tagger._merge(
         text,
         [
@@ -176,8 +176,8 @@ def test_merging_keeps_confidences_paired_with_their_spans(tagger):
 
 def test_distinct_entities_survive_the_merge(tagger):
     text = "x" * 200
-    a = Span(label="PER", start=10, end=20, text=text[10:20])
-    b = Span(label="ORG", start=30, end=40, text=text[30:40])
+    a = Span(labels=["PER"], start=10, end=20, text=text[10:20])
+    b = Span(labels=["ORG"], start=30, end=40, text=text[30:40])
     merged = tagger._merge(
         text,
         [
