@@ -688,7 +688,7 @@ def test_a_mismatched_dataset_is_refused_before_the_round_is_accepted(host, tmp_
         paths.append(path)
     ids = catalog.ingest(paths, media="image")
     label_set = catalog.label_sets.create("x", ClassificationSchema(classes=["a"]))
-    catalog.annotate_many(label_set, [(i, Choices(values=["a"])) for i in ids])
+    catalog.annotations.annotate_many(label_set, [(i, Choices(values=["a"])) for i in ids])
     dataset_id = catalog.create_dataset("d", label_set, collections=EVERYTHING)
 
     body = _round(
