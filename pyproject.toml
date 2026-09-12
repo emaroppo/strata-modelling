@@ -61,9 +61,9 @@ strata-runs = "strata.modelling.cli:main"
 # Read from what is installed, which is the only honest answer to "what can
 # this backend serve".
 [project.entry-points."strata.models"]
-multilabel = "strata.modelling.baselines.classifier:MultiLabelClassifier"
-multiclass = "strata.modelling.baselines.classifier:MulticlassClassifier"
-presence = "strata.modelling.baselines.classifier:PresenceClassifier"
+multilabel = "strata.modelling.baselines.image.classifier:MultiLabelClassifier"
+multiclass = "strata.modelling.baselines.image.variants:MulticlassClassifier"
+presence = "strata.modelling.baselines.image.variants:PresenceClassifier"
 text = "strata.modelling.baselines.text.classifier:TextClassifier"
 text-multiclass = "strata.modelling.baselines.text.multiclass:TextMulticlassClassifier"
 text-span = "strata.modelling.baselines.text.tagger:TextSpanTagger"

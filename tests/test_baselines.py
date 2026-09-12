@@ -12,12 +12,12 @@ import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from strata.modelling.baselines.classifier import (  # noqa: E402
+from strata.modelling.baselines.image import (  # noqa: E402
     MulticlassClassifier,
     MultiLabelClassifier,
     PresenceClassifier,
-    _LetterboxSquash,
 )
+from strata.modelling.baselines.image.data import LetterboxSquash  # noqa: E402
 
 CLASSES = ["cat", "dog", "bird"]
 CLASS_TO_IDX = {name: i for i, name in enumerate(CLASSES)}
@@ -134,11 +134,11 @@ def test_presence_drops_the_negative_class_from_the_head():
 
 @pytest.mark.parametrize("size", [(320, 180), (180, 320), (256, 256), (100, 33)])
 def test_letterbox_always_returns_the_requested_square(size):
-    assert _LetterboxSquash(224)(Image.new("RGB", size)).size == (224, 224)
+    assert LetterboxSquash(224)(Image.new("RGB", size)).size == (224, 224)
 
 
 def test_a_square_image_is_left_undistorted():
-    squash = _LetterboxSquash(64)
+    squash = LetterboxSquash(64)
     result = squash(Image.new("RGB", (256, 256), "white"))
     # No padding: every pixel is content
     assert result.getpixel((0, 0)) == (255, 255, 255)
@@ -146,7 +146,7 @@ def test_a_square_image_is_left_undistorted():
 
 
 def test_widescreen_content_fills_the_documented_share_of_the_square():
-    squash = _LetterboxSquash(1000, max_distortion=1.4)
+    squash = LetterboxSquash(1000, max_distortion=1.4)
     result = squash(Image.new("RGB", (1600, 900), "white"))
     filled = sum(1 for y in range(1000) if result.getpixel((500, y)) != (0, 0, 0))
     # The docstring's claim: ~79% for 16:9 at max_distortion 1.4
@@ -154,7 +154,7 @@ def test_widescreen_content_fills_the_documented_share_of_the_square():
 
 
 def test_distortion_never_exceeds_the_maximum():
-    squash = _LetterboxSquash(1000, max_distortion=1.4)
+    squash = LetterboxSquash(1000, max_distortion=1.4)
     result = squash(Image.new("RGB", (4000, 500), "white"))
     filled = sum(1 for y in range(1000) if result.getpixel((500, y)) != (0, 0, 0))
     # An 8:1 image is squashed by exactly 1.4 and letterboxed for the rest
@@ -162,7 +162,7 @@ def test_distortion_never_exceeds_the_maximum():
 
 
 def test_the_content_is_centred():
-    squash = _LetterboxSquash(100, max_distortion=1.0)
+    squash = LetterboxSquash(100, max_distortion=1.0)
     result = squash(Image.new("RGB", (400, 100), "white"))
     column = [result.getpixel((50, y)) != (0, 0, 0) for y in range(100)]
     above = column.index(True)

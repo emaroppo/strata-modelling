@@ -10,7 +10,7 @@ never installs them.
 
 #: Baseline package -> the install extra carrying its framework
 EXTRAS: dict[str, str] = {
-    "strata.modelling.baselines.classifier": "image",
+    "strata.modelling.baselines.image": "image",
     "strata.modelling.baselines.text": "text",
 }
 

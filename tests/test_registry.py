@@ -58,8 +58,8 @@ def test_a_name_whose_extra_is_missing_says_which_extra(monkeypatch):
 
     class Unimportable:
         name = "multilabel"
-        value = "strata.modelling.baselines.classifier:MultiLabelClassifier"
-        module = "strata.modelling.baselines.classifier"
+        value = "strata.modelling.baselines.image:MultiLabelClassifier"
+        module = "strata.modelling.baselines.image"
 
         def load(self):
             raise ModuleNotFoundError("No module named 'timm'")
