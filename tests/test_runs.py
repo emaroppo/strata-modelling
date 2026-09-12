@@ -1,25 +1,13 @@
 """The run store: lineage, and the history query it exists for."""
 
 import pytest
+from run_factory import a_run
 
-from strata.modelling import Run, RunStore
-
-
-def a_run(**overrides) -> Run:
-    base = dict(
-        id="",
-        dataset="d",
-        dataset_version=1,
-        label_set="presence",
-        model="counter.py:CountingModel",
-        model_version="1",
-        classes=["cat", "dog"],
-    )
-    return Run(**{**base, **overrides})
+from strata.modelling import RunStore
 
 
 def test_a_recorded_run_reads_back(store):
-    run = store.record(a_run(), {"accuracy": 0.5})
+    run = store.record(a_run(classes=["cat", "dog"]), {"accuracy": 0.5})
     assert store.get(run.id).classes == ["cat", "dog"]
 
 
@@ -35,7 +23,7 @@ def test_an_unknown_run_is_none(store):
 def test_latest_finds_the_newest_run_for_a_dataset(store):
     store.record(a_run(dataset_version=1), {})
     newest = store.record(a_run(dataset_version=2), {})
-    assert store.latest("d").id == newest.id
+    assert store.latest("demo").id == newest.id
 
 
 def test_latest_is_per_dataset(store):
@@ -53,17 +41,17 @@ def test_history_is_the_question_a_run_store_exists_for(store):
         store.record(a_run(dataset_version=version), {"accuracy": accuracy})
 
     # Metric progression across rounds, as one query rather than a glob
-    assert [value for _, _, value in store.history("d", "accuracy")] == [0.5, 0.7, 0.8]
+    assert [value for _, _, value in store.history("demo", "accuracy")] == [0.5, 0.7, 0.8]
 
 
 def test_history_carries_the_dataset_version(store):
     store.record(a_run(dataset_version=4), {"accuracy": 0.9})
-    assert store.history("d", "accuracy")[0][1] == 4
+    assert store.history("demo", "accuracy")[0][1] == 4
 
 
 def test_history_of_an_unrecorded_metric_is_empty(store):
     store.record(a_run(), {"accuracy": 0.5})
-    assert store.history("d", "f1") == []
+    assert store.history("demo", "f1") == []
 
 
 def test_a_chain_of_one_is_just_the_run(store):
@@ -96,7 +84,7 @@ def test_deleting_a_run_takes_its_metrics(store):
     run = store.record(a_run(), {"accuracy": 0.5})
     store.delete(run.id)
     assert store.get(run.id) is None
-    assert store.history("d", "accuracy") == []
+    assert store.history("demo", "accuracy") == []
 
 
 def test_a_local_store_needs_no_infrastructure(tmp_path):
@@ -123,15 +111,7 @@ def test_metrics_are_floats_whatever_went_in(store):
 def test_a_run_records_what_it_reported_as_it_trained(tmp_path):
     store = RunStore.local(tmp_path)
     run = store.record(
-        Run(
-            id="",
-            dataset="d",
-            dataset_version=1,
-            label_set="d",
-            model="m",
-            model_version="1",
-            classes=["a"],
-        ),
+        a_run(),
         {"val_accuracy": 0.9},
         curve=[(1, {"loss": 0.5}), (2, {"loss": 0.3})],
     )
@@ -143,15 +123,7 @@ def test_the_curve_is_not_mixed_into_the_final_metrics(tmp_path):
     """`get` answers with what the run ended at, not every step of it."""
     store = RunStore.local(tmp_path)
     run = store.record(
-        Run(
-            id="",
-            dataset="d",
-            dataset_version=1,
-            label_set="d",
-            model="m",
-            model_version="1",
-            classes=["a"],
-        ),
+        a_run(),
         {"loss": 0.2},
         curve=[(1, {"loss": 0.9}), (2, {"loss": 0.4})],
     )
@@ -163,15 +135,7 @@ def test_a_run_that_reported_nothing_has_no_curve(tmp_path):
     """A model may ignore on_epoch, and silence is not a zero-length epoch."""
     store = RunStore.local(tmp_path)
     run = store.record(
-        Run(
-            id="",
-            dataset="d",
-            dataset_version=1,
-            label_set="d",
-            model="m",
-            model_version="1",
-            classes=["a"],
-        ),
+        a_run(),
         {"loss": 0.2},
     )
 
@@ -182,17 +146,9 @@ def test_a_curve_does_not_reach_the_history(tmp_path):
     """`history` plots one point per run, not one per epoch."""
     store = RunStore.local(tmp_path)
     store.record(
-        Run(
-            id="",
-            dataset="d",
-            dataset_version=1,
-            label_set="d",
-            model="m",
-            model_version="1",
-            classes=["a"],
-        ),
+        a_run(),
         {"val_accuracy": 0.9},
         curve=[(1, {"val_accuracy": 0.1}), (2, {"val_accuracy": 0.5})],
     )
 
-    assert [v for _, _, v in store.history("d", "val_accuracy")] == [0.9]
+    assert [v for _, _, v in store.history("demo", "val_accuracy")] == [0.9]

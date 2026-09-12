@@ -9,26 +9,13 @@ rather than assumed.
 """
 
 import pytest
+from run_factory import recorded
 
-from strata.modelling import Run, RunStore
+from strata.modelling import RunStore
 from strata.modelling.service import CatalogMismatch, check_catalog
 
 A = "20260101T000000-aaaaaaaa"
 B = "20260202T000000-bbbbbbbb"
-
-
-def a_run(store, catalog_id=None, **overrides) -> Run:
-    base = dict(
-        id="",
-        dataset="demo",
-        dataset_version=1,
-        label_set="demo",
-        model="toy",
-        model_version="1",
-        classes=["cat"],
-        catalog_id=catalog_id,
-    )
-    return store.record(Run(**{**base, **overrides}), {"val_accuracy": 0.5})
 
 
 # ----------------------------------------------------------------------
@@ -38,14 +25,14 @@ def a_run(store, catalog_id=None, **overrides) -> Run:
 
 def test_a_run_remembers_its_catalog(tmp_path):
     store = RunStore.local(tmp_path / "runs")
-    run = a_run(store, catalog_id=A)
+    run = recorded(store, catalog_id=A)
     assert store.get(run.id).catalog_id == A
 
 
 def test_the_latest_run_is_scoped_to_a_catalog(tmp_path):
     store = RunStore.local(tmp_path / "runs")
-    mine = a_run(store, catalog_id=A)
-    a_run(store, catalog_id=B)
+    mine = recorded(store, catalog_id=A)
+    recorded(store, catalog_id=B)
 
     # Newest overall is the B run, and warm-starting from it would continue
     # a model trained on entirely different samples
@@ -55,7 +42,7 @@ def test_the_latest_run_is_scoped_to_a_catalog(tmp_path):
 
 def test_a_run_from_before_identities_still_counts(tmp_path):
     store = RunStore.local(tmp_path / "runs")
-    old = a_run(store, catalog_id=None)
+    old = recorded(store, catalog_id=None)
 
     # Null is unknown, not foreign. Excluding it would cold start every
     # project whose whole history predates this column.
@@ -64,8 +51,8 @@ def test_a_run_from_before_identities_still_counts(tmp_path):
 
 def test_a_known_run_wins_over_an_unknown_one(tmp_path):
     store = RunStore.local(tmp_path / "runs")
-    a_run(store, catalog_id=None)
-    newer = a_run(store, catalog_id=A)
+    recorded(store, catalog_id=None)
+    newer = recorded(store, catalog_id=A)
     assert store.latest("demo", A).id == newer.id
 
 

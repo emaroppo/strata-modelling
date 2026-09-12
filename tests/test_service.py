@@ -101,6 +101,15 @@ def _round(**overrides) -> RoundRequest:
     return RoundRequest(**fields)
 
 
+def _refused(tmp_path, catalog, request: RoundRequest, match: str) -> None:
+    """The round is refused for this reason, before anything is fetched."""
+    from strata.modelling import RunStore
+
+    with pytest.raises(ServiceError, match=match):
+        run_round(request, catalog, RunStore.local(tmp_path / "runs"), tmp_path / "datasets")
+    assert catalog.materialised == 0
+
+
 @pytest.fixture
 def fixture_dataset(tmp_path):
     """A materialised version, written the way the catalog would write it."""
@@ -586,17 +595,12 @@ def test_a_round_must_say_which_catalog_it_was_prepared_against():
 def test_a_round_for_another_catalog_is_refused_before_anything_is_fetched(
     tmp_path, fixture_dataset
 ):
-    from strata.modelling import RunStore
-
-    catalog = FakeCatalog("d", 2, fixture_dataset)
-    with pytest.raises(ServiceError, match="serves catalog"):
-        run_round(
-            _round(catalog_id="20250101T000000-cccccccc"),
-            catalog,
-            RunStore.local(tmp_path / "runs"),
-            tmp_path / "datasets",
-        )
-    assert catalog.materialised == 0
+    _refused(
+        tmp_path,
+        FakeCatalog("d", 2, fixture_dataset),
+        _round(catalog_id="20250101T000000-cccccccc"),
+        match="serves catalog",
+    )
 
 
 def test_an_id_that_names_another_dataset_here_is_refused(tmp_path, fixture_dataset):
@@ -606,31 +610,21 @@ def test_an_id_that_names_another_dataset_here_is_refused(tmp_path, fixture_data
     numbers its datasets on its own — so its dataset 1 and this host's
     dataset 1 can be different data.
     """
-    from strata.modelling import RunStore
-
-    catalog = FakeCatalog("d", 2, fixture_dataset)
-    with pytest.raises(ServiceError, match=r"d v2 .* other v5"):
-        run_round(
-            _round(dataset_name="other", dataset_version=5),
-            catalog,
-            RunStore.local(tmp_path / "runs"),
-            tmp_path / "datasets",
-        )
-    assert catalog.materialised == 0
+    _refused(
+        tmp_path,
+        FakeCatalog("d", 2, fixture_dataset),
+        _round(dataset_name="other", dataset_version=5),
+        match=r"d v2 .* other v5",
+    )
 
 
 def test_the_same_version_with_other_answers_is_refused(tmp_path, fixture_dataset):
-    from strata.modelling import RunStore
-
-    catalog = FakeCatalog("d", 2, fixture_dataset)
-    with pytest.raises(ServiceError, match="different answers"):
-        run_round(
-            _round(annotation_digest="f" * 64),
-            catalog,
-            RunStore.local(tmp_path / "runs"),
-            tmp_path / "datasets",
-        )
-    assert catalog.materialised == 0
+    _refused(
+        tmp_path,
+        FakeCatalog("d", 2, fixture_dataset),
+        _round(annotation_digest="f" * 64),
+        match="different answers",
+    )
 
 
 # ----------------------------------------------------------------------
@@ -742,14 +736,9 @@ def test_declared_features_reach_the_version_the_host_builds(
 def test_a_feature_declaration_the_host_cannot_read_is_refused_first(
     tmp_path, fixture_dataset
 ):
-    from strata.modelling import RunStore
-
-    catalog = FakeCatalog("d", 2, fixture_dataset)
-    with pytest.raises(ServiceError, match="source"):
-        run_round(
-            _round(features=[{"name": "species", "ref": "species"}]),
-            catalog,
-            RunStore.local(tmp_path / "runs"),
-            tmp_path / "datasets",
-        )
-    assert catalog.materialised == 0
+    _refused(
+        tmp_path,
+        FakeCatalog("d", 2, fixture_dataset),
+        _round(features=[{"name": "species", "ref": "species"}]),
+        match="source",
+    )

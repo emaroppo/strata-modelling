@@ -10,22 +10,9 @@ their first run 1, and there was no merge to write — only a collision.
 """
 
 import pytest
+from run_factory import recorded
 
-from strata.modelling import Run, RunStore, StoreMergeError, merge_stores
-
-
-def a_run(store, **overrides) -> Run:
-    base = dict(
-        id="",
-        dataset="demo",
-        dataset_version=1,
-        label_set="demo",
-        model="toy",
-        model_version="1",
-        classes=["cat"],
-    )
-    metrics = overrides.pop("metrics", {"val_accuracy": 0.5})
-    return store.record(Run(**{**base, **overrides}), metrics)
+from strata.modelling import RunStore, StoreMergeError, merge_stores
 
 
 @pytest.fixture
@@ -40,8 +27,8 @@ def stores(tmp_path):
 
 def test_runs_come_across(stores):
     source, target = stores
-    theirs = a_run(source, origin="gpu-host")
-    a_run(target, origin="desktop")
+    theirs = recorded(source, origin="gpu-host")
+    recorded(target, origin="desktop")
 
     report = merge_stores(source, target)
 
@@ -52,7 +39,7 @@ def test_runs_come_across(stores):
 
 def test_metrics_come_with_them(stores):
     source, target = stores
-    run = a_run(source, metrics={"val_accuracy": 0.9, "loss": 0.1})
+    run = recorded(source, metrics={"val_accuracy": 0.9, "loss": 0.1})
 
     merge_stores(source, target)
 
@@ -75,7 +62,7 @@ def report_metrics(store, run_id):
 
 def test_merging_twice_copies_nothing_the_second_time(stores):
     source, target = stores
-    a_run(source)
+    recorded(source)
 
     merge_stores(source, target)
     second = merge_stores(source, target)
@@ -99,8 +86,8 @@ def test_the_same_store_twice_is_refused(stores):
 
 def test_a_chain_survives_the_move(stores):
     source, target = stores
-    first = a_run(source)
-    second = a_run(source, parent_run_id=first.id)
+    first = recorded(source)
+    second = recorded(source, parent_run_id=first.id)
 
     merge_stores(source, target)
 
@@ -113,8 +100,8 @@ def test_a_parent_already_in_the_target_is_honoured(stores):
     source, target = stores
     # The desktop trained the first round; the GPU host continued from it,
     # which is exactly how the split happened
-    first = a_run(target)
-    second = a_run(source, parent_run_id=first.id)
+    first = recorded(target)
+    second = recorded(source, parent_run_id=first.id)
 
     report = merge_stores(source, target)
 
@@ -124,7 +111,7 @@ def test_a_parent_already_in_the_target_is_honoured(stores):
 
 def test_a_parent_in_neither_store_is_reported_not_dangled(stores):
     source, target = stores
-    orphan = a_run(source, parent_run_id="20250101T000000-deadbeef")
+    orphan = recorded(source, parent_run_id="20250101T000000-deadbeef")
 
     report = merge_stores(source, target)
 
@@ -142,7 +129,7 @@ def test_a_parent_in_neither_store_is_reported_not_dangled(stores):
 
 def test_a_checkpoint_is_left_behind_by_default(stores, tmp_path):
     source, target = stores
-    run = a_run(source)
+    run = recorded(source)
     checkpoint = source.checkpoint_path(run.id)
     checkpoint.write_bytes(b"weights")
     _attach(source, run.id, checkpoint)
@@ -158,7 +145,7 @@ def test_a_checkpoint_is_left_behind_by_default(stores, tmp_path):
 
 def test_a_checkpoint_comes_when_asked_for(stores):
     source, target = stores
-    run = a_run(source)
+    run = recorded(source)
     checkpoint = source.checkpoint_path(run.id)
     checkpoint.write_bytes(b"weights")
     _attach(source, run.id, checkpoint)
@@ -174,7 +161,7 @@ def test_a_checkpoint_comes_when_asked_for(stores):
 
 def test_a_checkpoint_that_is_gone_is_not_claimed(stores):
     source, target = stores
-    run = a_run(source)
+    run = recorded(source)
     _attach(source, run.id, source.checkpoint_path(run.id))  # never written
 
     report = merge_stores(source, target, checkpoints=True)
@@ -202,7 +189,7 @@ def test_cached_predictions_come_across(stores):
     from strata.modelling import PredictionCache
 
     source, target = stores
-    run = a_run(source)
+    run = recorded(source)
     PredictionCache.beside(source).put(
         run.id, {"abc123": ChoicesPrediction(values=["cat"], confidences=[0.9])}
     )
@@ -217,7 +204,7 @@ def test_cached_predictions_come_across(stores):
 
 def test_a_dry_run_writes_nothing(stores):
     source, target = stores
-    run = a_run(source)
+    run = recorded(source)
 
     report = merge_stores(source, target, dry_run=True)
 
