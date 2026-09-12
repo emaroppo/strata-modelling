@@ -1,34 +1,10 @@
 """The modelling service's client: asking another host to run the round.
 
-Beside the service rather than with the labeller, because a client belongs
-with the protocol it speaks, and because the train stage dispatches to a
-host from here without knowing what a labelling project is.
-
-The wire is deliberately narrow: a dataset id and what it names, a model
-name, params. The caller freezes the dataset — collections and val ratio
-are the project's business — and the host materialises it, picks a parent
-from the runs it holds, trains, and records. Nothing about a project
-travels.
-
-What is sent is built from the host's own request models, so a field
-renamed on one side fails a test rather than being dropped at the other.
-And the host is asked which protocol it speaks before anything is sent: a
-host on another release would ignore what it does not know and run the
-round anyway.
-
-Standard library rather than a client library, because this is a handful
-of JSON calls and adding a dependency to the tool people install locally
-to save twenty lines is a poor trade.
-
-**A round is submitted, not awaited.** The submission is one short request;
-after it returns, the round is the host's problem. Closing the laptop,
-losing wifi, walking out — none of it reaches the training, and reconnecting
-means asking after a job id rather than starting again.
-
-Polling therefore has to be harder to kill than the thing it is watching. A
-network error while polling is not a failed round, it is a failed question
-about a round, so it is retried rather than raised. The only fatal answers
-are the host saying the job failed, or saying it never heard of it.
+Beside the service because a client belongs with the protocol it speaks.
+What is sent is built from the host's own request models, the protocol is
+checked before anything is sent, a round is submitted and polled, and a
+failed question about a round is not a failed round. Standard library.
+See ``docs/adr/0007``.
 """
 
 import json

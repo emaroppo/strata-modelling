@@ -1,41 +1,11 @@
 """Training as a service: the same handler, reached over a wire.
 
-The one place in this package allowed to import ``catalog``, and the reason
-the training core is not. The core takes a directory and a manifest and
-nothing else, which is what makes a dataset version a portable artifact and
-lets the core be tested against a fixture directory with no database in
-sight. Materialising is the shell's job.
-
-What crosses the wire is a dataset id, not a directory. The host has the
-index and the bucket; shipping it a gigabyte of images it could fetch
-itself would be paying the network to avoid using the network.
-
-Two things live here rather than with the caller, because they need the run
-store and the run store lives beside the checkpoints:
-
-**Choosing a parent.** Warm-starting means loading a checkpoint, so only
-the machine holding checkpoints can decide which one, or verify the choice.
-
-**Recording the run.** A run names a checkpoint by path. Recorded anywhere
-else it would name a file that machine does not have.
-
-**A round is submitted, not awaited.** Training is minutes, and the caller
-is a laptop that closes. Holding a connection open for the whole run makes
-the round only as reliable as the network and the lid, so the request
-returns a job and the caller polls. Losing the connection then costs
-nothing: the work carries on here, and the job is still there to ask about.
-
-One round at a time, refused rather than queued. A second training job on
-one GPU does not run slower, it runs out of memory and takes the first one
-with it.
-
-**Both sides speak one protocol.** The laptop and this host are separate
-releases once the packages are, and a field one side added and the other
-ignores fails silently — which is how remote rounds would have dropped
-features. So ``/healthz`` states :data:`PROTOCOL`, the laptop checks it
-before sending anything, and every other request names it or is refused.
-The number goes up only when an older side would misread a newer one; a
-field added with a default does not need it.
+The one place in this package allowed to import ``catalog``: it
+materialises, chooses the parent and records the run, because the run
+store and the checkpoints are here. A round is submitted and polled, one
+at a time, refused rather than queued. ``/healthz`` states
+:data:`PROTOCOL`; every other request names it or is refused. See
+``docs/adr/0007``.
 """
 
 import os
@@ -52,7 +22,8 @@ from .registry import available
 from .requests import PredictRequest, Run, TrainRequest
 from .runs import RunStore
 
-#: What this release says over the wire. See the module docstring.
+#: What this release says over the wire. Goes up only when an older side
+#: would misread a newer one (``docs/adr/0007``).
 PROTOCOL = 1
 #: The header every request but ``/healthz`` names it in.
 PROTOCOL_HEADER = "X-Strata-Protocol"
@@ -87,12 +58,9 @@ class RoundRequest(BaseModel):
     fresh_params: dict = Field(default_factory=dict)
     #: Cold start, ignoring whatever this host last trained on this dataset.
     fresh: bool = False
-    #: Which catalog the caller believes this host serves. A dataset id is
-    #: an integer meaningful only within one, so if the host is on another
-    #: catalog the same id names different samples — and the round would
-    #: succeed, silently, over the wrong data. Required: every catalog has
-    #: an identity, and a client too old to send one is turned away by the
-    #: protocol check before it gets here.
+    #: Which catalog the caller believes this host serves. Required: on
+    #: another catalog the same id names different samples, and the round
+    #: would succeed over the wrong data. See ``docs/adr/0008``.
     catalog_id: str
     #: What the model is to be told about each sample, as the project
     #: declares it under ``[[data.features]]``: ``{name, source, ref}``. The
@@ -160,10 +128,8 @@ class Job(BaseModel):
 class Jobs:
     """The rounds this host is running, and has run.
 
-    In memory, and deliberately so: a job is a thread, and a thread does not
-    survive a restart however carefully its record is written. A round that
-    completed is in the run store, which is the durable half and the one
-    worth recovering from.
+    In memory: a thread does not survive a restart, and a completed round
+    is in the run store. See ``docs/adr/0007``.
     """
 
     def __init__(self, runner):
