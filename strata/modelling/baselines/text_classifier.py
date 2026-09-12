@@ -218,25 +218,13 @@ class _TransformerBase(Model):
         window_overlap: int | None = None,
         window_aggregation: str | None = None,
     ):
-        """``window`` is off by default, and off means today's behaviour.
+        """``window`` is off by default; off means truncation at ``MAX_LENGTH``.
 
-        Truncation at ``MAX_LENGTH`` stays the default because the right way
-        to handle a document past the encoder's limit is not a property of
-        text — it depends on the corpus. Windowing suits email, where the
-        tail of a long message carries as many entities as the head;
-        truncation suits a corpus whose documents lead with what matters; a
-        long-context encoder suits others still. So the choice is declared
-        in ``[model.params]`` and recorded on the run, rather than inherited
-        from a default nobody chose.
-
-        ``window_overlap`` is how many tokens consecutive windows share, so
-        the step between them is ``window - window_overlap``. It has to
-        exceed the longest thing being labelled or that thing can be split
-        across a boundary and found twice, in halves. It defaults to a
-        quarter of the window rather than to a fixed number of tokens: a
-        fixed default is either too small for a long window or larger than
-        a short one, and the second silently means the windows never
-        advance.
+        Whether to window is a property of the corpus, so it is declared
+        in ``[model.params]`` and recorded on the run (``docs/adr/0014``).
+        ``window_overlap`` is how many tokens consecutive windows share; it
+        must exceed the longest thing being labelled, and defaults to a
+        quarter of the window.
         """
         if window is not None:
             if window_overlap is None:

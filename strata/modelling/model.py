@@ -89,16 +89,10 @@ class Model(ABC):
     def requires_schema(self, schema) -> None:
         """Refuse a label set this model cannot learn from. Raise, or return.
 
-        :attr:`task` catches a classifier pointed at spans. This catches the
-        finer thing: a label set of the right task whose *shape* the model
-        cannot represent — regions that overlap, a region carrying two
-        labels — which is otherwise discovered by training on a projection
-        of the data and reporting a number for it.
-
-        Raise ``ValueError`` naming what would be needed instead; training
-        turns that into a refusal before the round rather than during it.
-        The default accepts anything, because most models have nothing to
-        say here.
+        For a label set of the right task whose *shape* the model cannot
+        represent. Raise ``ValueError`` naming what would be needed;
+        training refuses before the round. The default accepts anything.
+        See ``docs/adr/0014``.
         """
         return None
 
