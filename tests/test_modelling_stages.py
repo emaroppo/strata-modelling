@@ -6,8 +6,8 @@ import pytest
 from counting_model import COUNTER
 
 from strata.labels import MANIFEST_NAME
+from strata.modelling.remote.checks import CatalogMismatch
 from strata.modelling.remote.client import RemoteError
-from strata.modelling.remote.service import CatalogMismatch
 from strata.modelling.stages import (
     Context,
     DatasetIdentity,

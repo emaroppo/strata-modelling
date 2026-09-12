@@ -12,7 +12,7 @@ import time
 import urllib.error
 import urllib.request
 
-from .service import PROTOCOL, PROTOCOL_HEADER, PredictionRequest, RoundRequest
+from .wire import PROTOCOL, PROTOCOL_HEADER, PredictionRequest, RoundRequest
 
 #: Generous, because the request is held open for a whole training run and
 #: a timeout here reads as a failed round rather than as a slow one.

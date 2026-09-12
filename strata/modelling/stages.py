@@ -23,8 +23,9 @@ from strata.common.stages import Stage
 from strata.labels import MANIFEST_NAME, Manifest, feature_digest
 
 from . import handlers
+from .remote.checks import check_catalog
 from .remote.client import RemoteError, Trainer
-from .remote.service import PredictionRequest, RoundRequest, check_catalog
+from .remote.wire import PredictionRequest, RoundRequest
 from .requests import PredictRequest, Run, TrainRequest
 from .store.predictions import PredictionCache
 from .store.runs import RunStore

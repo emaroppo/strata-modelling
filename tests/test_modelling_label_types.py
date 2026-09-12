@@ -66,7 +66,7 @@ def test_a_prediction_survives_being_tied_to_its_sample(example, tmp_path):
 
 @each_type
 def test_a_prediction_survives_the_wire(example):
-    from strata.modelling.remote.service import PredictionResponse
+    from strata.modelling.remote.wire import PredictionResponse
 
     response = PredictionResponse(predictions={"a" * 64: example.prediction})
     back = PredictionResponse.model_validate_json(response.model_dump_json())

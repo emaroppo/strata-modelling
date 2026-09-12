@@ -12,7 +12,7 @@ import pytest
 from run_factory import recorded
 
 from strata.modelling import RunStore
-from strata.modelling.remote.service import CatalogMismatch, check_catalog
+from strata.modelling.remote.checks import CatalogMismatch, check_catalog
 
 A = "20260101T000000-aaaaaaaa"
 B = "20260202T000000-bbbbbbbb"

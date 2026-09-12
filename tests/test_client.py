@@ -13,7 +13,7 @@ import urllib.request
 import pytest
 
 from strata.modelling.remote.client import Refused, Trainer, Unreachable
-from strata.modelling.remote.service import PROTOCOL, PredictionRequest, RoundRequest
+from strata.modelling.remote.wire import PROTOCOL, PredictionRequest, RoundRequest
 
 
 class Reply:
