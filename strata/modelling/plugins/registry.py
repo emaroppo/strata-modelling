@@ -17,7 +17,7 @@ from pathlib import Path
 
 from strata.common import plugins
 
-from .model import Model
+from ..model import Model
 
 #: Where an installed distribution advertises the models it provides.
 ENTRY_POINT_GROUP = "strata.models"
@@ -146,7 +146,7 @@ def _extra_hint(module: str) -> str:
     not a broken model but an install that never asked for one. Saying which
     extra beats a ModuleNotFoundError from inside importlib.
     """
-    from .baselines import EXTRAS
+    from ..baselines import EXTRAS
 
     extra = EXTRAS.get(module)
     if extra is None:

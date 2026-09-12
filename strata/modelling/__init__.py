@@ -17,12 +17,12 @@ that persistence (``docs/adr/0006``).
 """
 
 from .handlers import TrainingError, examples, predict, train
-from .merge import StoreMergeError, StoreMergeReport, merge_stores
 from .model import Example, Model
-from .predictions import PredictionCache
-from .registry import ENTRY_POINT_GROUP, ModelError, available, resolve
+from .plugins.registry import ENTRY_POINT_GROUP, ModelError, available, resolve
 from .requests import PredictRequest, Run, ScoredPath, TrainRequest
-from .runs import RunStore
+from .store.merge import StoreMergeError, StoreMergeReport, merge_stores
+from .store.predictions import PredictionCache
+from .store.runs import RunStore
 
 __all__ = [
     "ENTRY_POINT_GROUP",

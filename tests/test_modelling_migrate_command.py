@@ -4,7 +4,7 @@ from alembic.migration import MigrationContext
 from sqlalchemy import create_engine
 
 from strata.common.migrations import script_directory
-from strata.modelling.schema_version import MIGRATIONS, migrate
+from strata.modelling.store.schema_version import MIGRATIONS, migrate
 
 
 def test_the_migrate_command_needs_no_alembic_ini(tmp_path, monkeypatch):

@@ -15,8 +15,8 @@ from sqlalchemy import create_engine
 
 from strata.common.migrations import script_directory
 from strata.modelling import RunStore
-from strata.modelling import tables as t
-from strata.modelling.schema_version import MIGRATIONS
+from strata.modelling.store import tables as t
+from strata.modelling.store.schema_version import MIGRATIONS
 
 
 @pytest.fixture

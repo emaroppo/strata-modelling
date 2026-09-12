@@ -50,7 +50,7 @@ def test_metrics_come_with_them(stores):
 def report_metrics(store, run_id):
     from sqlalchemy import select
 
-    from strata.modelling import tables as t
+    from strata.modelling.store import tables as t
 
     with store.engine.connect() as conn:
         return {
@@ -173,7 +173,7 @@ def test_a_checkpoint_that_is_gone_is_not_claimed(stores):
 def _attach(store, run_id, path):
     from sqlalchemy import update
 
-    from strata.modelling import tables as t
+    from strata.modelling.store import tables as t
 
     with store.engine.begin() as conn:
         conn.execute(update(t.run).where(t.run.c.id == run_id).values(checkpoint=str(path)))

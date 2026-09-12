@@ -23,11 +23,11 @@ from strata.common.stages import Stage
 from strata.labels import MANIFEST_NAME, Manifest, feature_digest
 
 from . import handlers
-from .client import RemoteError, Trainer
-from .predictions import PredictionCache
+from .remote.client import RemoteError, Trainer
+from .remote.service import PredictionRequest, RoundRequest, check_catalog
 from .requests import PredictRequest, Run, TrainRequest
-from .runs import RunStore
-from .service import PredictionRequest, RoundRequest, check_catalog
+from .store.predictions import PredictionCache
+from .store.runs import RunStore
 
 DATASET_DIR = "dataset_dir"
 RUN = "run"

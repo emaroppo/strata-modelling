@@ -10,8 +10,8 @@ from sqlalchemy.engine import Engine
 from strata.common import database
 from strata.common.migrations import require_current, stamp_if_new
 
+from ..requests import Run
 from . import tables as t
-from .requests import Run
 from .schema_version import MIGRATIONS
 
 

@@ -7,7 +7,7 @@ own model:
 
 .. code-block:: python
 
-    from strata.modelling.conformance import ModelContract
+    from strata.modelling.plugins.conformance import ModelContract
 
     class TestMyModel(ModelContract):
         @pytest.fixture
@@ -38,7 +38,7 @@ from strata.labels import (
     SpansPrediction,
 )
 
-from .model import Example, Model
+from ..model import Example, Model
 
 
 def _class_names(values) -> set[str]:

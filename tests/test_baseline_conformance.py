@@ -21,7 +21,7 @@ from strata.modelling.baselines.classifier import (  # noqa: E402
     MultiLabelClassifier,
     PresenceClassifier,
 )
-from strata.modelling.conformance import ModelContract  # noqa: E402
+from strata.modelling.plugins.conformance import ModelContract  # noqa: E402
 
 
 class _TinyBackbone(torch.nn.Module):

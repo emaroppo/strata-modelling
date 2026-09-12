@@ -11,8 +11,8 @@ import json
 import sys
 from pathlib import Path
 
-from .merge import StoreMergeError, merge_stores
-from .runs import RunStore
+from .store.merge import StoreMergeError, merge_stores
+from .store.runs import RunStore
 
 
 def main(argv: list[str] | None = None) -> int:

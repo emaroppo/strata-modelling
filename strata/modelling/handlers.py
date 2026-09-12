@@ -13,11 +13,11 @@ from sqlalchemy import update
 
 from strata.labels import MANIFEST_NAME, Manifest, ManifestFormatError
 
-from . import tables as t
 from .model import Example, Model
-from .registry import ModelError, absolute, resolve
+from .plugins.registry import ModelError, absolute, resolve
 from .requests import PredictRequest, Run, ScoredPath, TrainRequest
-from .runs import RunStore
+from .store import tables as t
+from .store.runs import RunStore
 
 
 class TrainingError(Exception):

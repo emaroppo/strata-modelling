@@ -50,10 +50,10 @@ service = [
 [project.scripts]
 # Only importable with the service extra; declared here so a host has a
 # command rather than a python -c.
-strata-modelling = "strata.modelling.service:main"
+strata-modelling = "strata.modelling.remote.service:main"
 # Alembic's commands over the migrations this package ships, so a run store
 # can be brought up to date from an installed wheel.
-strata-modelling-migrate = "strata.modelling.schema_version:migrate"
+strata-modelling-migrate = "strata.modelling.store.schema_version:migrate"
 # Looking after a run store: folding one into another.
 strata-runs = "strata.modelling.cli:main"
 

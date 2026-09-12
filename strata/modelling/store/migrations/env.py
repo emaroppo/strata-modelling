@@ -16,7 +16,7 @@ from pathlib import Path
 from alembic import context
 
 from strata.common.migrations import run_alembic
-from strata.modelling.tables import metadata
+from strata.modelling.store.tables import metadata
 
 
 def database_url() -> str:

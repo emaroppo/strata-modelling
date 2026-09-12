@@ -54,7 +54,7 @@ def test_a_bare_name_goes_to_the_registry():
 
 def test_a_name_whose_extra_is_missing_says_which_extra(monkeypatch):
     """Asked for by name it once raised a bare ModuleNotFoundError from inside importlib."""
-    import strata.modelling.registry as registry
+    import strata.modelling.plugins.registry as registry
 
     class Unimportable:
         name = "multilabel"

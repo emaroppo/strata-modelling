@@ -31,7 +31,7 @@ from strata.modelling.baselines.text_classifier import (  # noqa: E402
     TextMulticlassClassifier,
     TextSpanTagger,
 )
-from strata.modelling.conformance import ModelContract  # noqa: E402
+from strata.modelling.plugins.conformance import ModelContract  # noqa: E402
 
 WORDS = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"]
 

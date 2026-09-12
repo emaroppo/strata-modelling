@@ -6,7 +6,7 @@ class, a val_accuracy of 0.5 when nothing else is said.
 """
 
 from strata.modelling.requests import Run
-from strata.modelling.runs import RunStore
+from strata.modelling.store.runs import RunStore
 
 
 def a_run(**overrides) -> Run:

@@ -409,7 +409,7 @@ def test_an_unresolvable_parent_reference_does_not_block(store, dataset_dir):
     # it would make history unusable to say nothing about it
     first = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
     with store.engine.begin() as conn:
-        from strata.modelling import tables as t
+        from strata.modelling.store import tables as t
 
         conn.execute(
             t.run.update().where(t.run.c.id == first.id).values(model="gone.away:Model")

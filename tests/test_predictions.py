@@ -10,7 +10,7 @@ asked first.
 import pytest
 
 from strata.labels import ChoicesPrediction
-from strata.modelling.predictions import PredictionCache
+from strata.modelling.store.predictions import PredictionCache
 
 
 @pytest.fixture

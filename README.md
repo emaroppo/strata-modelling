@@ -61,7 +61,7 @@ is refused over HTTP.
 | `text-span` | span | text | BIO tagging, with optional windowing |
 
 The pairs differ by a handful of hooks and share the rest. Nothing ships
-for boxes. `ModelContract` in `strata.modelling.conformance` is the suite
+for boxes. `ModelContract` in `strata.modelling.plugins.conformance` is the suite
 a plugin runs against itself.
 
 ## The run store
@@ -89,7 +89,7 @@ dataset's identity rather than a directory, materialises it from its own
 catalog, chooses the parent from the runs it holds, trains and records. A
 round is submitted and polled, one at a time, refused rather than queued.
 Both sides state a protocol, checked on `/healthz` before anything is
-sent. `strata.modelling.client.Trainer` is the standard-library client.
+sent. `strata.modelling.remote.clientTrainer` is the standard-library client.
 
 The GPU host's user unit and environment example are under `deploy/gpu/`.
 The token comes from `STRATA_MODELLING_TOKEN`; where the catalog is comes

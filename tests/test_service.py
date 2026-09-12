@@ -12,7 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from strata.catalog import DatasetRef
-from strata.modelling.service import (
+from strata.modelling.remote.service import (
     PROTOCOL,
     PROTOCOL_HEADER,
     RoundRequest,
@@ -164,7 +164,7 @@ def stub_training(monkeypatch):
     The handler itself is covered where it lives; what matters here is the
     request the shell builds — which directory, which parent.
     """
-    import strata.modelling.service as service
+    import strata.modelling.remote.service as service
     from strata.modelling.requests import Run
 
     seen = {}
@@ -342,7 +342,7 @@ def test_a_file_reference_is_refused_before_anything_is_fetched(tmp_path, fixtur
 
 
 def test_a_round_is_accepted_and_then_run():
-    from strata.modelling.service import Jobs
+    from strata.modelling.remote.service import Jobs
 
     started = threading.Event()
     release = threading.Event()
@@ -370,7 +370,7 @@ def test_a_round_is_accepted_and_then_run():
 
 
 def test_a_second_round_is_refused_while_one_runs():
-    from strata.modelling.service import BusyError, Jobs
+    from strata.modelling.remote.service import BusyError, Jobs
 
     release = threading.Event()
     jobs = Jobs(lambda request, progress: release.wait(2))
@@ -383,7 +383,7 @@ def test_a_second_round_is_refused_while_one_runs():
 
 
 def test_a_failed_round_keeps_its_reason():
-    from strata.modelling.service import Jobs
+    from strata.modelling.remote.service import Jobs
 
     def explode(request, progress):
         raise RuntimeError("CUDA out of memory")
@@ -401,7 +401,7 @@ def test_a_failed_round_keeps_its_reason():
 
 
 def test_an_unservable_model_is_refused_at_submission():
-    from strata.modelling.service import Jobs
+    from strata.modelling.remote.service import Jobs
 
     jobs = Jobs(lambda request, progress: None)
     # Before a thread starts, so a caller learns immediately rather than by
@@ -433,7 +433,7 @@ def test_the_stage_advances_past_materialising(tmp_path, fixture_dataset, stub_t
 
 
 def test_a_job_says_what_it_is_doing():
-    from strata.modelling.service import Jobs
+    from strata.modelling.remote.service import Jobs
 
     seen = []
     release = threading.Event()
@@ -502,7 +502,7 @@ def stub_predict(monkeypatch):
 
 def test_scoring_is_keyed_by_content(tmp_path, stub_predict):
     from strata.modelling import RunStore
-    from strata.modelling.service import PredictionRequest, run_prediction
+    from strata.modelling.remote.service import PredictionRequest, run_prediction
 
     known = {"a" * 64: tmp_path / "a.jpg", "b" * 64: tmp_path / "b.jpg"}
     catalog = FakeCache(known)
@@ -522,7 +522,7 @@ def test_scoring_is_keyed_by_content(tmp_path, stub_predict):
 
 def test_a_sample_the_host_does_not_know_is_reported(tmp_path, stub_predict):
     from strata.modelling import RunStore
-    from strata.modelling.service import PredictionRequest, run_prediction
+    from strata.modelling.remote.service import PredictionRequest, run_prediction
 
     catalog = FakeCache({"a" * 64: tmp_path / "a.jpg"})
     result = run_prediction(
@@ -537,7 +537,7 @@ def test_a_sample_the_host_does_not_know_is_reported(tmp_path, stub_predict):
 
 def test_scoring_says_what_it_is_doing(tmp_path, stub_predict):
     from strata.modelling import RunStore
-    from strata.modelling.service import PredictionRequest, run_prediction
+    from strata.modelling.remote.service import PredictionRequest, run_prediction
 
     stages = []
     run_prediction(
@@ -642,7 +642,7 @@ def host(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     from strata.catalog import Catalog
-    from strata.modelling.service import build
+    from strata.modelling.remote.service import build
 
     catalog = Catalog.local(tmp_path / "catalog")
     config = tmp_path / "config.toml"

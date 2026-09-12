@@ -17,10 +17,10 @@ from pydantic import BaseModel, Field
 
 from strata.labels import AnyPrediction, Prediction, feature_digest
 
-from .handlers import train as run_train
-from .registry import available
-from .requests import PredictRequest, Run, TrainRequest
-from .runs import RunStore
+from ..handlers import train as run_train
+from ..plugins.registry import available
+from ..requests import PredictRequest, Run, TrainRequest
+from ..store.runs import RunStore
 
 #: What this release says over the wire. Goes up only when an older side
 #: would misread a newer one (``docs/adr/0007``).
@@ -350,8 +350,8 @@ def run_prediction(
     expensive half of a push and the reason it belongs on the machine with
     the GPU rather than the machine with the reviewer.
     """
-    from .handlers import predict as run_predict
-    from .predictions import PredictionCache
+    from ..handlers import predict as run_predict
+    from ..store.predictions import PredictionCache
 
     # Kept beside the runs, so the answer is the same for every caller
     # rather than for whichever machine asked first.
@@ -399,7 +399,7 @@ def run_prediction(
 def _metrics_of(store: RunStore, run_id: int) -> dict[str, float]:
     from sqlalchemy import select
 
-    from . import tables as t
+    from ..store import tables as t
 
     with store.engine.connect() as conn:
         return {

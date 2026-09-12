@@ -8,7 +8,7 @@ import pytest
 
 from strata.labels import Choices
 from strata.modelling import Example
-from strata.modelling.conformance import ModelContract
+from strata.modelling.plugins.conformance import ModelContract
 
 
 @pytest.fixture

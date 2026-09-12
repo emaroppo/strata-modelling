@@ -70,7 +70,7 @@ def test_a_chain_survives_a_cycle(store):
     # something did
     first = store.record(a_run(), {})
     with store.engine.begin() as conn:
-        from strata.modelling import tables as t
+        from strata.modelling.store import tables as t
 
         conn.execute(t.run.update().where(t.run.c.id == first.id).values(parent_run_id=first.id))
     assert len(store.chain(first.id)) == 1
