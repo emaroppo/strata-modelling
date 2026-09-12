@@ -15,7 +15,7 @@ from strata.labels import Span
 pytest.importorskip("torch", reason="needs the text extra")
 pytest.importorskip("transformers", reason="needs the text extra")
 
-from strata.modelling.baselines.text_classifier import span_scores  # noqa: E402
+from strata.modelling.baselines.text import span_scores  # noqa: E402
 
 
 def s(label, start, end):

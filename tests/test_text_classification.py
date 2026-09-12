@@ -21,7 +21,7 @@ from strata.labels import (  # noqa: E402
     ClassificationSchema,
 )
 from strata.modelling import Example  # noqa: E402
-from strata.modelling.baselines.text_classifier import (  # noqa: E402
+from strata.modelling.baselines.text import (  # noqa: E402
     TextClassifier,
     TextMulticlassClassifier,
 )

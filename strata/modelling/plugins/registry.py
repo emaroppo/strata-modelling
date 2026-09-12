@@ -146,9 +146,9 @@ def _extra_hint(module: str) -> str:
     not a broken model but an install that never asked for one. Saying which
     extra beats a ModuleNotFoundError from inside importlib.
     """
-    from ..baselines import EXTRAS
+    from ..baselines import extra_for
 
-    extra = EXTRAS.get(module)
+    extra = extra_for(module)
     if extra is None:
         return ""
     return (

@@ -22,7 +22,7 @@ pytest.importorskip("transformers", reason="needs the text extra")
 
 from strata.labels import Span, Spans, SpanSchema  # noqa: E402
 from strata.modelling import Example  # noqa: E402
-from strata.modelling.baselines.text_classifier import TextSpanTagger  # noqa: E402
+from strata.modelling.baselines.text import TextSpanTagger  # noqa: E402
 
 #: "alpha beta gamma" tokenises as three words at 0..5, 6..10 and 11..16.
 DOCUMENT = "alpha beta gamma"

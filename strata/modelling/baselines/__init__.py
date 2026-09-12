@@ -8,8 +8,13 @@ frameworks are optional dependencies, so a project carrying its own model
 never installs them.
 """
 
-#: Baseline module -> the install extra carrying its framework
+#: Baseline package -> the install extra carrying its framework
 EXTRAS: dict[str, str] = {
     "strata.modelling.baselines.classifier": "image",
-    "strata.modelling.baselines.text_classifier": "text",
+    "strata.modelling.baselines.text": "text",
 }
+
+
+def extra_for(module: str) -> str | None:
+    """Which extra a baseline module needs, or None for anything that is not one."""
+    return next((extra for prefix, extra in EXTRAS.items() if module.startswith(prefix)), None)

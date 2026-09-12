@@ -64,9 +64,9 @@ strata-runs = "strata.modelling.cli:main"
 multilabel = "strata.modelling.baselines.classifier:MultiLabelClassifier"
 multiclass = "strata.modelling.baselines.classifier:MulticlassClassifier"
 presence = "strata.modelling.baselines.classifier:PresenceClassifier"
-text = "strata.modelling.baselines.text_classifier:TextClassifier"
-text-multiclass = "strata.modelling.baselines.text_classifier:TextMulticlassClassifier"
-text-span = "strata.modelling.baselines.text_classifier:TextSpanTagger"
+text = "strata.modelling.baselines.text.classifier:TextClassifier"
+text-multiclass = "strata.modelling.baselines.text.multiclass:TextMulticlassClassifier"
+text-span = "strata.modelling.baselines.text.tagger:TextSpanTagger"
 
 [tool.uv.sources]
 strata-labels = { workspace = true }

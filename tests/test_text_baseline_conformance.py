@@ -26,7 +26,7 @@ pytest.importorskip("transformers", reason="needs the text extra")
 
 from strata.labels import Choices, ClassificationSchema, Span, Spans  # noqa: E402
 from strata.modelling import Example  # noqa: E402
-from strata.modelling.baselines.text_classifier import (  # noqa: E402
+from strata.modelling.baselines.text import (  # noqa: E402
     TextClassifier,
     TextMulticlassClassifier,
     TextSpanTagger,

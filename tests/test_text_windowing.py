@@ -19,9 +19,10 @@ pytest.importorskip("transformers", reason="needs the text extra")
 import torch  # noqa: E402
 
 from strata.labels import Span, Spans, SpansPrediction  # noqa: E402
-from strata.modelling.baselines.text_classifier import (  # noqa: E402
+from strata.modelling.baselines.text import (  # noqa: E402
     TextClassifier,
     TextSpanTagger,
+    bio,  # noqa: E402
 )
 
 CLASSES = ["PER", "ORG"]
@@ -117,7 +118,7 @@ def test_a_span_late_in_a_document_is_still_supervised(tagger):
     target = Spans(values=[Span(labels=["PER"], start=start, end=end, text=text[start:end])])
     items = tagger._encode(text, target)
 
-    begin, inside = tagger._tag_ids("PER")
+    begin, inside = bio.tag_ids(tagger.classes, "PER")
     tagged = [i for i, item in enumerate(items) if bool((item["labels"] == begin).any())]
     assert tagged, "the entity was in no window's supervision"
 
