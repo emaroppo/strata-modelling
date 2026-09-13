@@ -76,7 +76,11 @@ def run_round(
             )
 
     previous = (
-        None if request.fresh else store.latest(manifest.dataset, manifest.catalog_id)
+        None
+        if request.fresh
+        else store.latest(
+            manifest.dataset, manifest.catalog_id, since_version=manifest.sides_from_version
+        )
     )
     params = (
         {**request.params, **request.fresh_params} if previous is None else request.params

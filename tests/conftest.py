@@ -37,6 +37,7 @@ def dataset_dir(tmp_path):
         n_skipped: int = 0,
         name: str = "d",
         version: int = 1,
+        sides_from_version: int | None = None,
     ) -> Path:
         root = tmp_path / f"{name}-v{version}"
         (root / "files").mkdir(parents=True, exist_ok=True)
@@ -70,6 +71,7 @@ def dataset_dir(tmp_path):
                     },
                     "val_ratio": 0.2,
                     "val_ratio_achieved": n_val / max(n_train + n_val, 1),
+                    "sides_from_version": sides_from_version,
                     "samples": samples,
                 }
             )

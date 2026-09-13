@@ -76,7 +76,11 @@ def _train_here(request: TrainStageRequest, context: Context) -> TrainRecord:
     elif request.fresh:
         parent = None
     else:
-        parent = store.latest(manifest.dataset, manifest.catalog_id)
+        # Not past a re-split: a run from before it may have trained on
+        # what this version holds out
+        parent = store.latest(
+            manifest.dataset, manifest.catalog_id, since_version=manifest.sides_from_version
+        )
     # Asked after the parent is known, not before. Fresh is a request and
     # cold is an outcome; they part company when nothing has trained on this
     # dataset yet, and a cold run then trained for as long as a warm one.

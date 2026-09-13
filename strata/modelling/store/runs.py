@@ -232,16 +232,26 @@ class RunStore:
             )
         return [run for run in (self.get(str(i)) for i in ids) if run is not None]
 
-    def latest(self, dataset: str, catalog_id: str | None = None) -> Run | None:
+    def latest(
+        self, dataset: str, catalog_id: str | None = None, since_version: int | None = None
+    ) -> Run | None:
         """The newest run over a dataset — what a warm start continues from.
 
         Scoped to a catalog when one is given; a run with no catalog
         recorded matches, since null is unknown. See ``docs/adr/0008``.
+
+        ``since_version`` is the version the dataset's sides descend from:
+        a run over an earlier version trained before a re-split and may have
+        seen what is now held out, so it is not continued. A run that
+        recorded no version is left out too, since it cannot say.
         """
+        where = _over(dataset, catalog_id)
+        if since_version is not None:
+            where = where & (t.run.c.dataset_version >= since_version)
         with self.engine.connect() as conn:
             run_id = conn.execute(
                 select(t.run.c.id)
-                .where(_over(dataset, catalog_id))
+                .where(where)
                 # By time, not by id. Ids are minted where a run happens and
                 # sort by their timestamp, but a store holding both those and
                 # older numeric ones would order them by their first digit.

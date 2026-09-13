@@ -50,6 +50,17 @@ def test_the_default_policy_continues_from_the_newest_run(store, dataset_dir):
     assert store.get(second.run_id).params == {"bias": 0.4}
 
 
+def test_a_round_after_a_re_split_starts_cold(store, dataset_dir):
+    # Version 3 drew its sides from nothing; the run over version 1 may have
+    # trained on what 3 now holds out, so it is not continued
+    before = train(_train(dataset_dir(version=1, sides_from_version=1)), Context(store))
+    after = train(_train(dataset_dir(version=3, sides_from_version=3)), Context(store))
+    assert after.parent_run_id is None
+    # And from there the lineage continues as usual
+    again = train(_train(dataset_dir(version=4, sides_from_version=3)), Context(store))
+    assert again.parent_run_id == after.run_id != before.run_id
+
+
 def test_fresh_starts_cold_whatever_the_store_holds(store, dataset_dir):
     directory = dataset_dir()
     train(_train(directory), Context(store))

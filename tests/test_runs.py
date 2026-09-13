@@ -36,6 +36,21 @@ def test_latest_is_none_for_an_unknown_dataset(store):
     assert store.latest("never-trained") is None
 
 
+def test_latest_does_not_reach_back_past_a_re_split(store):
+    # Versions 1 and 2 share sides; version 3 re-split from nothing, so a
+    # run over 1 or 2 may have trained on what 3 holds out
+    store.record(a_run(dataset_version=1), {})
+    over_two = store.record(a_run(dataset_version=2), {})
+    unversioned = store.record(a_run(dataset_version=None), {})
+    assert store.latest("demo").id == unversioned.id
+    assert store.latest("demo", since_version=1).id == over_two.id
+    # Nothing since the re-split yet, and a run that cannot say which
+    # version it saw is not continued either
+    assert store.latest("demo", since_version=3) is None
+    over_three = store.record(a_run(dataset_version=3), {})
+    assert store.latest("demo", since_version=3).id == over_three.id
+
+
 def test_history_is_the_question_a_run_store_exists_for(store):
     for version, accuracy in enumerate([0.5, 0.7, 0.8], start=1):
         store.record(a_run(dataset_version=version), {"accuracy": accuracy})
