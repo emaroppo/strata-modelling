@@ -221,11 +221,9 @@ def test_a_scored_sample_is_not_scored_twice(store, dataset_dir, monkeypatch):
     request = EvaluateRequest(run_id=record.run_id, dataset_dir=directory)
     first = evaluate(request, Context(store))
 
-    import strata.modelling.stages as stages
+    import strata.modelling.handlers as handlers
 
-    monkeypatch.setattr(
-        stages.handlers, "predict", lambda *a, **k: pytest.fail("predicted again")
-    )
+    monkeypatch.setattr(handlers, "predict", lambda *a, **k: pytest.fail("predicted again"))
     assert evaluate(request, Context(store)).metrics == first.metrics
 
 
