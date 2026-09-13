@@ -52,7 +52,6 @@ def dataset_dir(tmp_path):
                     "id": i + 1,
                     "checksum": f"{i:064d}",
                     "path": relative,
-                    "group_id": None,
                     "split": "val" if n_train <= i < n_train + n_val else "train",
                     "value": None if skipped else {"kind": "choices", "values": [classes[0]]},
                 }
