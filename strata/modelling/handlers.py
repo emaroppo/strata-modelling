@@ -103,6 +103,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
             # the record of what was trained on, and it is the only thing
             # both the local and the remote path have in common
             catalog_id=manifest.catalog_id,
+            experiment_id=request.experiment_id,
             label_set=manifest.label_set,
             # Anchored, so predicting or warm-starting from this run later
             # does not depend on the dataset directory still being there
@@ -113,6 +114,10 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
         ),
         metrics,
         curve,
+        # What this run saw: the side of every sample in the manifest it
+        # trained from, inherited or drawn, so the split's realisation is
+        # asked of the run rather than of a directory that may be gone
+        saw=[(s.checksum, s.split) for s in manifest.samples],
     )
     checkpoint = store.checkpoint_path(run.id)
     model.save(checkpoint)

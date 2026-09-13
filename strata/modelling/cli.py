@@ -57,6 +57,7 @@ def _merge(args) -> int:
         payload = {
             "runs": report.runs,
             "metrics": report.metrics,
+            "samples": report.samples,
             "predictions": report.predictions,
             "checkpoints": report.checkpoints,
             "already_present": report.already_present,

@@ -37,6 +37,23 @@ def test_runs_come_across(stores):
     assert len(target.history("demo", "val_accuracy")) == 2
 
 
+def test_what_a_run_saw_comes_with_it(stores):
+    from strata.modelling import Run
+
+    source, target = stores
+    run = source.record(
+        Run(id="", dataset="demo", label_set="l", model="m", model_version="1"),
+        {"val_accuracy": 0.5},
+        saw=[("aaa", "train"), ("bbb", "val"), ("ccc", "holdout")],
+    )
+
+    report = merge_stores(source, target)
+
+    assert report.samples == 3
+    assert target.saw(run.id) == {"train": ["aaa"], "val": ["bbb"], "holdout": ["ccc"]}
+    assert "3 sample side(s)" in report.lines()
+
+
 def test_metrics_come_with_them(stores):
     source, target = stores
     run = recorded(source, metrics={"val_accuracy": 0.9, "loss": 0.1})

@@ -92,12 +92,15 @@ class RunStore:
         run: Run,
         metrics: dict[str, float],
         curve: list[tuple[int, dict[str, float]]] | None = None,
+        saw: list[tuple[str, str]] | None = None,
     ) -> Run:
-        """Write a completed run, its final metrics, and its training curve.
+        """Write a completed run, its final metrics, its curve, and what it saw.
 
         The id is minted here. ``curve`` is ``(epoch, metrics)`` oldest
-        first, written with the run: a run appears only once it finished,
-        and a round that died halfway leaves neither. See ``docs/adr/0005``.
+        first, and ``saw`` is ``(checksum, side)`` for every sample of the
+        manifest the run trained from. Both are written with the run: a run
+        appears only once it finished, and a round that died halfway leaves
+        nothing. See ``docs/adr/0005``.
         """
         origin = run.origin or socket.gethostname()
         run_id = run.id or new_run_id(origin)
@@ -116,11 +119,17 @@ class RunStore:
                     params=run.params,
                     classes=run.classes,
                     checkpoint=str(run.checkpoint) if run.checkpoint else None,
+                    experiment_id=run.experiment_id,
                 )
             )
             self._write_metrics(conn, run_id, metrics)
             for epoch, reported in curve or ():
                 self._write_metrics(conn, run_id, reported, epoch=epoch)
+            if saw:
+                conn.execute(
+                    insert(t.run_sample),
+                    [{"run_id": run_id, "checksum": c, "side": s} for c, s in saw],
+                )
         return run.model_copy(
             update={"id": run_id, "origin": origin, "metrics": metrics}
         )
@@ -169,6 +178,7 @@ class RunStore:
             parent_run_id=None if row.parent_run_id is None else str(row.parent_run_id),
             origin=row.origin,
             catalog_id=row.catalog_id,
+            experiment_id=row.experiment_id,
             dataset=row.dataset,
             dataset_version=row.dataset_version,
             label_set=row.label_set,
@@ -179,6 +189,35 @@ class RunStore:
             checkpoint=Path(row.checkpoint) if row.checkpoint else None,
             metrics=metrics,
         )
+
+    def saw(self, run_id: str) -> dict[str, list[str]]:
+        """Which side each sample was on for this run: checksums by side.
+
+        Every side is present, empty or not, so a run with no holdout reads
+        as one rather than as a missing key.
+        """
+        sides: dict[str, list[str]] = {"train": [], "val": [], "holdout": []}
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                select(t.run_sample.c.side, t.run_sample.c.checksum)
+                .where(t.run_sample.c.run_id == run_id)
+                .order_by(t.run_sample.c.checksum)
+            ).all()
+        for side, checksum in rows:
+            sides.setdefault(side, []).append(checksum)
+        return sides
+
+    def for_experiment(self, experiment_id: str) -> list[Run]:
+        """Every run an experiment file asked for, oldest first."""
+        with self.engine.connect() as conn:
+            ids = list(
+                conn.execute(
+                    select(t.run.c.id)
+                    .where(t.run.c.experiment_id == experiment_id)
+                    .order_by(t.run.c.created_at, t.run.c.id)
+                ).scalars()
+            )
+        return [run for run in (self.get(str(i)) for i in ids) if run is not None]
 
     def latest(self, dataset: str, catalog_id: str | None = None) -> Run | None:
         """The newest run over a dataset — what a warm start continues from.

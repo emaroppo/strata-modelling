@@ -630,6 +630,104 @@ def test_the_same_version_with_other_answers_is_refused(tmp_path, fixture_datase
 
 
 # ----------------------------------------------------------------------
+# The split the caller holds
+
+
+def _held(fixture_dataset, tmp_path):
+    """The version as the caller's directory has it, for sending its split."""
+    from strata.labels import MANIFEST_NAME, Manifest
+
+    where = tmp_path / "held"
+    fixture_dataset(where)
+    return Manifest.model_validate_json((where / MANIFEST_NAME).read_text())
+
+
+def test_a_split_the_caller_drew_is_applied_to_a_copy(tmp_path, fixture_dataset, stub_training):
+    from strata.labels import MANIFEST_NAME, Manifest, order_digest, sides_string
+    from strata.modelling import RunStore
+    from strata.modelling.remote.wire import SplitSides
+
+    held = _held(fixture_dataset, tmp_path)
+    # Every side flipped, so the draw differs from the version's everywhere
+    drawn = "".join("h" if c != "h" else "t" for c in sides_string(held))
+    split = SplitSides(sides=drawn, order_digest=order_digest(held), holdout_ratio=0.5)
+    catalog = FakeCatalog("d", 2, fixture_dataset)
+    datasets = tmp_path / "datasets"
+
+    run_round(_round(split=split), catalog, RunStore.local(tmp_path / "runs"), datasets)
+
+    trained = stub_training["request"].dataset_dir
+    assert trained != datasets / "d" / "v002" and trained.parent == datasets / "d"
+    copy = Manifest.model_validate_json((trained / MANIFEST_NAME).read_text())
+    assert sides_string(copy) == drawn
+    assert copy.holdout_ratio == 0.5
+    assert copy.holdout_ratio_achieved == drawn.count("h") / len(drawn)
+    # The version this host materialised keeps the catalog's sides
+    original = Manifest.model_validate_json((datasets / "d" / "v002" / MANIFEST_NAME).read_text())
+    assert sides_string(original) == sides_string(held)
+
+
+def test_a_split_equal_to_the_versions_trains_from_the_version(
+    tmp_path, fixture_dataset, stub_training
+):
+    from strata.labels import order_digest, sides_string
+    from strata.modelling import RunStore
+    from strata.modelling.remote.wire import SplitSides
+
+    held = _held(fixture_dataset, tmp_path)
+    split = SplitSides(sides=sides_string(held), order_digest=order_digest(held))
+    datasets = tmp_path / "datasets"
+
+    run_round(
+        _round(split=split),
+        FakeCatalog("d", 2, fixture_dataset),
+        RunStore.local(tmp_path / "runs"),
+        datasets,
+    )
+
+    assert stub_training["request"].dataset_dir == datasets / "d" / "v002"
+
+
+def test_a_split_over_other_samples_is_refused_before_training(
+    tmp_path, fixture_dataset, stub_training
+):
+    from strata.labels import sides_string
+    from strata.modelling import RunStore
+    from strata.modelling.remote.checks import SplitMismatch
+    from strata.modelling.remote.wire import SplitSides
+
+    held = _held(fixture_dataset, tmp_path)
+    split = SplitSides(sides=sides_string(held), order_digest="0" * 64)
+
+    with pytest.raises(SplitMismatch, match="order"):
+        run_round(
+            _round(split=split),
+            FakeCatalog("d", 2, fixture_dataset),
+            RunStore.local(tmp_path / "runs"),
+            tmp_path / "datasets",
+        )
+    assert "request" not in stub_training
+
+
+def test_a_split_of_the_wrong_length_is_refused(tmp_path, fixture_dataset, stub_training):
+    from strata.labels import order_digest
+    from strata.modelling import RunStore
+    from strata.modelling.remote.checks import SplitMismatch
+    from strata.modelling.remote.wire import SplitSides
+
+    held = _held(fixture_dataset, tmp_path)
+    split = SplitSides(sides="t", order_digest=order_digest(held))
+
+    with pytest.raises(SplitMismatch, match="names 1 sample"):
+        run_round(
+            _round(split=split),
+            FakeCatalog("d", 2, fixture_dataset),
+            RunStore.local(tmp_path / "runs"),
+            tmp_path / "datasets",
+        )
+    assert "request" not in stub_training
+
+
 # Speaking the same protocol
 # ----------------------------------------------------------------------
 

@@ -158,6 +158,30 @@ def test_what_is_sent_is_the_hosts_own_request(monkeypatch):
     assert request.catalog_id == "cat-1" and request.fresh is True
 
 
+def test_the_split_this_side_holds_is_sent_positionally(monkeypatch, dataset_dir):
+    from strata.labels import MANIFEST_NAME, Manifest, order_digest, sides_string
+
+    sent = []
+    monkeypatch.setattr(FakeHost, "submit", lambda self, r: sent.append(r) or {"id": "job"})
+    directory = dataset_dir(n_train=3, n_val=1)
+    request = TrainStageRequest(
+        dataset_dir=directory, dataset=_identity(), model="multilabel", fresh=True
+    )
+    train(request, _there())
+    [request] = sent
+    held = Manifest.model_validate_json((directory / MANIFEST_NAME).read_text())
+    assert request.split.sides == sides_string(held)
+    assert sorted(request.split.sides) == ["t", "t", "t", "v"]
+    assert request.split.order_digest == order_digest(held)
+
+
+def test_a_round_with_no_directory_sends_no_split(monkeypatch):
+    sent = []
+    monkeypatch.setattr(FakeHost, "submit", lambda self, r: sent.append(r) or {"id": "job"})
+    train(TrainStageRequest(dataset=_identity(), model="multilabel", fresh=True), _there())
+    assert sent[0].split is None
+
+
 def test_a_host_on_another_catalog_is_refused_before_anything_is_sent(monkeypatch):
     monkeypatch.setattr(FakeHost, "served", {"name": "main", "id": "other"})
     with pytest.raises(CatalogMismatch, match="serves catalog other"):

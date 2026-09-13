@@ -31,6 +31,9 @@ class TrainRequest(BaseModel):
     #: the newest run over the same dataset, is the caller's policy to apply
     #: rather than a default hidden in here.
     parent_run_id: str | None = None
+    #: Recorded on the run, so a study is a query over the store. The
+    #: orchestrator sets it; a round from the command line has none.
+    experiment_id: str | None = None
 
 
 class PredictRequest(BaseModel):
@@ -76,6 +79,9 @@ class Run(BaseModel):
     #: Which catalog the dataset belongs to. Null for a run recorded before
     #: catalogs had identities.
     catalog_id: str | None = None
+    #: The experiment file that asked for this run, by its hash. None for a
+    #: run nothing orchestrated.
+    experiment_id: str | None = None
 
     @property
     def short(self) -> str:

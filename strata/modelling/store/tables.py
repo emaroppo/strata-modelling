@@ -53,8 +53,26 @@ run = Table(
     # See docs/adr/0005.
     Column("classes", JSON, nullable=False),
     Column("checkpoint", Text, nullable=True),
+    # Which experiment file asked for this run, by the file's hash, so a
+    # study is a query here rather than a walk of the ledger. Null for a run
+    # nothing orchestrated. The trial is in the ledger, not on the run.
+    Column("experiment_id", String(64), nullable=True),
     Column("created_at", DateTime, server_default=func.now()),
     Index("ix_run_dataset", "dataset", "dataset_version"),
+    Index("ix_run_experiment", "experiment_id"),
+)
+
+
+#: What a run saw: which side each sample of its manifest was on. The
+#: realisation of the split, per run, whether the sides were inherited from
+#: the catalog's version or drawn from a seed — the two read the same here,
+#: and a surprising number can be asked which samples the model was shown.
+run_sample = Table(
+    "run_sample",
+    metadata,
+    Column("run_id", ForeignKey("run.id", ondelete="CASCADE"), primary_key=True),
+    Column("checksum", String(64), primary_key=True),
+    Column("side", String(8), nullable=False),
 )
 
 

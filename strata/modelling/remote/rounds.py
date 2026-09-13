@@ -7,7 +7,7 @@ from strata.labels import Prediction, feature_digest
 from ..handlers import train as run_train
 from ..requests import PredictRequest, TrainRequest
 from ..store.runs import RunStore
-from .checks import check_catalog, check_dataset, check_features, check_servable
+from .checks import check_catalog, check_dataset, check_features, check_servable, check_split
 from .wire import (
     PredictionRequest,
     PredictionResponse,
@@ -51,6 +51,30 @@ def run_round(
     )
     manifest, target, materialised = result.manifest, result.directory, result.fetched
 
+    # The caller's sides, when they are not the version's own: applied to a
+    # copy beside it by the same code the local split stage uses, so a
+    # split drawn on a laptop is what this host trains on rather than the
+    # catalog's assignment it would otherwise silently substitute.
+    if request.split is not None:
+        sides = check_split(request.split, manifest)
+        if sides is not None:
+            from strata.catalog.stages import apply_sides
+            from strata.common.canonical import short_hash
+
+            asked = request.split
+            tag = short_hash(
+                {"sides": asked.sides, "val": asked.val_ratio, "holdout": asked.holdout_ratio},
+                length=12,
+            )
+            target, manifest = apply_sides(
+                target,
+                manifest,
+                sides,
+                val_ratio=asked.val_ratio,
+                holdout_ratio=asked.holdout_ratio,
+                tag=tag,
+            )
+
     previous = (
         None if request.fresh else store.latest(manifest.dataset, manifest.catalog_id)
     )
@@ -76,6 +100,7 @@ def run_round(
             model=request.model,
             params=params,
             parent_run_id=previous.id if previous else None,
+            experiment_id=request.experiment_id,
         ),
         store,
         on_epoch=epoch,

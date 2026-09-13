@@ -38,6 +38,24 @@ def test_training_records_a_run(store, dataset_dir):
     assert store.get(run.id) == run
 
 
+def test_the_run_records_its_experiment_and_what_it_saw(store, dataset_dir):
+    asked = "e" * 64
+    request = TrainRequest(
+        dataset_dir=dataset_dir(n_train=6, n_val=2), model=COUNTER, experiment_id=asked
+    )
+    run = train(request, store)
+    assert store.get(run.id).experiment_id == asked
+    assert [r.id for r in store.for_experiment(asked)] == [run.id]
+    # Every sample of the manifest, by side, so the split as realised is
+    # asked of the run rather than of a directory
+    saw = store.saw(run.id)
+    assert {side: len(sums) for side, sums in saw.items()} == {"train": 6, "val": 2, "holdout": 0}
+    # A round nobody orchestrated has no experiment, and says so
+    alone = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
+    assert store.get(alone.id).experiment_id is None
+    assert store.for_experiment(asked) == [store.get(run.id)]
+
+
 def test_the_run_carries_its_lineage(store, dataset_dir):
     run = train(TrainRequest(dataset_dir=dataset_dir(version=3), model=COUNTER), store)
     # These three resolve back to the exact samples and annotations behind

@@ -4,7 +4,7 @@
 
 
 from ..plugins.registry import available
-from .wire import RoundRequest, ServiceError
+from .wire import RoundRequest, ServiceError, SplitSides
 
 
 class CatalogMismatch(ServiceError):
@@ -13,6 +13,10 @@ class CatalogMismatch(ServiceError):
 
 class DatasetMismatch(ServiceError):
     """A dataset id that names other data here than where the round was prepared."""
+
+
+class SplitMismatch(ServiceError):
+    """A split sent for a version that lists other samples here, or in another order."""
 
 
 def check_catalog(requested: str, serving: str) -> None:
@@ -57,6 +61,37 @@ def check_dataset(request: RoundRequest, found) -> None:
             f"catalog than where the round was prepared — a copy labelled since it "
             f"was taken. Merge it back and freeze the dataset again."
         )
+
+
+def check_split(split: SplitSides, manifest) -> list[str] | None:
+    """The sides to apply to the version this host materialised, or None
+    when the version already has them.
+
+    Positional, so the order is proven first: the count, and the digest of
+    the checksums in manifest order. A split that fails either would land
+    sides on the wrong samples without failing, which is the fault this
+    check exists for.
+    """
+    from strata.labels import order_digest, sides_from_string, sides_string
+
+    if len(split.sides) != len(manifest.samples):
+        raise SplitMismatch(
+            f"The round's split names {len(split.sides)} sample(s), and {manifest.dataset} "
+            f"v{manifest.version} has {len(manifest.samples)} here."
+        )
+    if split.order_digest != order_digest(manifest):
+        raise SplitMismatch(
+            f"The round's split is over samples in an order this host's copy of "
+            f"{manifest.dataset} v{manifest.version} does not have. The sides are "
+            f"positional, so nothing was applied."
+        )
+    try:
+        sides = sides_from_string(split.sides)
+    except ValueError as e:
+        raise SplitMismatch(str(e)) from None
+    if split.sides == sides_string(manifest):
+        return None
+    return sides
 
 
 def check_features(request: RoundRequest) -> list:

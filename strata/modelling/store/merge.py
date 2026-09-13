@@ -42,6 +42,8 @@ class StoreMergeReport:
     predictions: int = 0
     #: Checkpoint files copied.
     checkpoints: int = 0
+    #: Rows of what each run saw — a sample and its side — copied.
+    samples: int = 0
     #: Runs whose parent is in neither store. Copied, with the link dropped.
     orphaned: list[str] = field(default_factory=list)
 
@@ -50,6 +52,8 @@ class StoreMergeReport:
             f"{self.runs} run(s)",
             f"{self.metrics} metric row(s)",
         ]
+        if self.samples:
+            out.append(f"{self.samples} sample side(s)")
         if self.predictions:
             out.append(f"{self.predictions} cached prediction(s)")
         if self.checkpoints:
@@ -125,6 +129,9 @@ def merge_stores(
 
         report.metrics += _copy(source, target, t.metric, t.metric.c.run_id, row.id,
                                 dry_run, drop_id=True)
+        report.samples += _copy(
+            source, target, t.run_sample, t.run_sample.c.run_id, row.id, dry_run
+        )
         if predictions:
             report.predictions += _copy(
                 source, target, t.prediction, t.prediction.c.run_id, row.id, dry_run

@@ -9,7 +9,11 @@ from ..requests import Run
 
 #: What this release says over the wire. Goes up only when an older side
 #: would misread a newer one (``docs/adr/0007``).
-PROTOCOL = 1
+#:
+#: 2: a round may carry the split as the caller realised it. A host on 1
+#: would ignore the field and train on the version's own sides without
+#: saying so, which is exactly the misreading the number exists to stop.
+PROTOCOL = 2
 
 
 #: The header every request but ``/healthz`` names it in.
@@ -18,6 +22,23 @@ PROTOCOL_HEADER = "X-Strata-Protocol"
 
 class ServiceError(Exception):
     """A request this host cannot honour."""
+
+
+class SplitSides(BaseModel):
+    """The split as the caller's directory realised it, positionally.
+
+    One letter per sample in manifest order — ``t``, ``v`` or ``h`` — and
+    a digest of the checksums in that order, which the host checks against
+    the version it materialises before assigning a side by position. A
+    frozen version lists the same samples in the same order on every host,
+    and the digest proves it. The realisation travels, never the seed: a
+    draw is written down rather than relied on to come out the same twice.
+    """
+
+    sides: str
+    order_digest: str
+    val_ratio: float | None = None
+    holdout_ratio: float | None = None
 
 
 class RoundRequest(BaseModel):
@@ -55,6 +76,15 @@ class RoundRequest(BaseModel):
     #: only the declarations travel. Defaulted: a project declaring none
     #: sends none.
     features: list[dict] = Field(default_factory=list)
+    #: The experiment file asking for this round, by its hash, recorded on
+    #: the run this host makes. Defaulted, so a caller from the command line
+    #: sends none and an older host ignores it.
+    experiment_id: str | None = None
+    #: The sides as the caller's directory has them, inherited or drawn.
+    #: The host trains on these, from a copy of what it materialised when
+    #: they differ from the version's own. None from a caller holding no
+    #: directory, which trains on the version's sides.
+    split: SplitSides | None = None
 
 
 class RoundResponse(BaseModel):
