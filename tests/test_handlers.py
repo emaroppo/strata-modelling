@@ -392,6 +392,22 @@ def test_a_declared_requirement_is_accepted(store, dataset_dir):
     assert train(TrainRequest(dataset_dir=root, model=COUNTER), store).id
 
 
+def test_a_requirement_may_depend_on_a_parameter(store, dataset_dir):
+    # Read from the built model, so a plugin whose needs follow its params
+    # can say so — here a feature named by a parameter
+    root = dataset_dir()
+    (root / "counter.py").write_text(
+        (root / "counter.py").read_text().replace(
+            "    def __init__(self, bias: float = 0.5):",
+            "    def __init__(self, bias: float = 0.5, told: str = \"\"):\n"
+            "        self.requires_features = (told,) if told else ()",
+        )
+    )
+    with pytest.raises(TrainingError, match="needs feature\\(s\\) species"):
+        train(TrainRequest(dataset_dir=root, model=COUNTER, params={"told": "species"}), store)
+    assert train(TrainRequest(dataset_dir=root, model=COUNTER), store).id
+
+
 def test_continuing_from_another_model_is_refused(store, dataset_dir):
     first = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
     other = dataset_dir(version=2)

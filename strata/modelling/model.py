@@ -68,17 +68,21 @@ class Model(ABC):
     #: knows about, and an annotation tool given one silently drops the
     #: prediction — so the label set has to declare it, and training refuses
     #: if it does not.
-    requires_classes: ClassVar[tuple[str, ...]] = ()
+    #:
+    #: Read from the built model, not the class: a requirement that depends
+    #: on a parameter is set in the constructor, and a fixed one stays a
+    #: class attribute, which an instance reads all the same.
+    requires_classes: tuple[str, ...] = ()
 
     #: Features this model cannot predict without. Declared the way
     #: :attr:`requires_classes` is, and checked the same way — before the
-    #: round rather than during it.
+    #: round rather than during it, once the model is built.
     #:
     #: "Cannot predict without", not "cannot train without", and the
     #: distinction is load-bearing: a model that learns to infer a feature
     #: as an auxiliary task wants it while training and never at inference.
     #: Declaring the stronger thing would make that model inexpressible.
-    requires_features: ClassVar[tuple[str, ...]] = ()
+    requires_features: tuple[str, ...] = ()
 
     #: Bumped when a change makes existing checkpoints unreadable. A run
     #: records it, and warm-starting from a checkpoint written by a

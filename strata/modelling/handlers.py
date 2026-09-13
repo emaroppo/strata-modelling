@@ -36,7 +36,13 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
             f"set is '{schema.task}'"
         )
 
-    undeclared = [c for c in model_cls.requires_classes if c not in schema.classes]
+    # Built before its requirements are read: a requirement can depend on a
+    # parameter, and only the constructed model knows its parameters.
+    # Construction is seconds where the round is minutes, so a refusal
+    # still comes before the expensive part.
+    model: Model = _construct(model_cls, request.model, request.params)
+
+    undeclared = [c for c in model.requires_classes if c not in schema.classes]
     if undeclared:
         # This model emits a class of its own. Left undeclared, the
         # prediction is legal here and rejected by whatever displays it —
@@ -48,7 +54,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
         )
 
     declared = {f.get("name") for f in manifest.features}
-    unmet = [f for f in model_cls.requires_features if f not in declared]
+    unmet = [f for f in model.requires_features if f not in declared]
     if unmet:
         # Before the round rather than during it, the same as an undeclared
         # class. A model that needs a feature nobody supplies would train
@@ -60,7 +66,6 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
             f"Declare them under [[data.features]] and materialise again."
         )
 
-    model: Model = _construct(model_cls, request.model, request.params)
     try:
         model.requires_schema(schema)
     except ValueError as e:

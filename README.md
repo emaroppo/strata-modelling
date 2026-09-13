@@ -40,7 +40,9 @@ declares what it cannot predict without through `requires_features`, the
 classes it emits through `requires_classes`, and a label-set shape it
 cannot represent through `requires_schema`. All three are checked before
 the round, so a mismatch is a refusal rather than a number reported for a
-projection of the data. `on_epoch` and `on_batch` are optional to call
+projection of the data. The first two are read from the built model, so
+a requirement that depends on a parameter is set in the constructor and
+a fixed one is a class attribute. `on_epoch` and `on_batch` are optional to call
 and mandatory to accept, because a caller on another machine cannot
 otherwise tell minute one from minute nine.
 
