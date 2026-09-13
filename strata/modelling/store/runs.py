@@ -15,6 +15,19 @@ from . import tables as t
 from .schema_version import MIGRATIONS
 
 
+def _over(dataset: str, catalog_id: str | None):
+    """The runs over a dataset, within a catalog when one is named.
+
+    A run with no catalog recorded matches, since null is unknown rather
+    than "some other": excluding it would cold-start every project whose
+    history predates catalog identities. See ``docs/adr/0008``.
+    """
+    where = t.run.c.dataset == dataset
+    if catalog_id is not None:
+        where = where & ((t.run.c.catalog_id == catalog_id) | t.run.c.catalog_id.is_(None))
+    return where
+
+
 def host_token(name: str | None = None) -> str:
     """A hostname reduced to something safe to put in an identifier."""
     raw = (name or socket.gethostname()).split(".")[0].lower()
@@ -225,15 +238,10 @@ class RunStore:
         Scoped to a catalog when one is given; a run with no catalog
         recorded matches, since null is unknown. See ``docs/adr/0008``.
         """
-        where = t.run.c.dataset == dataset
-        if catalog_id is not None:
-            where = where & (
-                (t.run.c.catalog_id == catalog_id) | t.run.c.catalog_id.is_(None)
-            )
         with self.engine.connect() as conn:
             run_id = conn.execute(
                 select(t.run.c.id)
-                .where(where)
+                .where(_over(dataset, catalog_id))
                 # By time, not by id. Ids are minted where a run happens and
                 # sort by their timestamp, but a store holding both those and
                 # older numeric ones would order them by their first digit.
@@ -242,8 +250,15 @@ class RunStore:
             ).scalar_one_or_none()
         return self.get(run_id) if run_id is not None else None
 
-    def history(self, dataset: str, metric: str) -> list[tuple[str, int, float]]:
-        """``(run id, dataset version, value)`` for one metric, oldest first."""
+    def history(
+        self, dataset: str, metric: str, catalog_id: str | None = None
+    ) -> list[tuple[str, int, float]]:
+        """``(run id, dataset version, value)`` for one metric, oldest first.
+
+        Scoped to a catalog when one is given, on the rule ``latest`` uses:
+        a dataset name means something within one catalog, and a history
+        across two is two histories under one name.
+        """
         with self.engine.connect() as conn:
             return [
                 (r.id, r.dataset_version, r.value)
@@ -251,7 +266,7 @@ class RunStore:
                     select(t.run.c.id, t.run.c.dataset_version, t.metric.c.value)
                     .join(t.metric, t.metric.c.run_id == t.run.c.id)
                     .where(
-                        (t.run.c.dataset == dataset)
+                        _over(dataset, catalog_id)
                         & (t.metric.c.name == metric)
                         & (t.metric.c.epoch.is_(None))
                     )
@@ -262,7 +277,7 @@ class RunStore:
                 ).all()
             ]
 
-    def metric_names(self, dataset: str) -> list[str]:
+    def metric_names(self, dataset: str, catalog_id: str | None = None) -> list[str]:
         """Which metrics this dataset's runs actually recorded.
 
         Models report what they like — accuracy for a classifier, span F1
@@ -273,7 +288,7 @@ class RunStore:
             rows = conn.execute(
                 select(t.metric.c.name)
                 .join(t.run, t.metric.c.run_id == t.run.c.id)
-                .where((t.run.c.dataset == dataset) & (t.metric.c.epoch.is_(None)))
+                .where(_over(dataset, catalog_id) & (t.metric.c.epoch.is_(None)))
                 .distinct()
             ).all()
         return sorted(row.name for row in rows)
