@@ -231,3 +231,29 @@ def test_mean_counts_the_windows_that_said_nothing(single):
     )
     # alpha: (0.6 + 0.6) / 3 = 0.4; beta: 0.95 / 3 ≈ 0.317
     assert merged.values == ["alpha"]
+
+
+# ----------------------------------------------------------------------
+# The checkpoint
+# ----------------------------------------------------------------------
+
+
+def test_a_checkpoint_round_trips_under_the_restricted_loader(single, tokenizer, tmp_path):
+    # A checkpoint is tensors, the class list and the encoder name, so the
+    # loader that refuses arbitrary pickles is enough (docs/adr/0005)
+    document = tmp_path / "doc.txt"
+    document.write_text(DOCUMENT)
+    single.finetune([Example(path=document, target=Choices(values=["alpha"]))], ["alpha", "beta"])
+    path = tmp_path / "run.pt"
+    single.save(path)
+
+    again = TextMulticlassClassifier(device="cpu", num_epochs=1, batch_size=1)
+    again._tokenizer = tokenizer
+    again._build_model = lambda n: _Tiny(n)
+    again.load(path)
+
+    assert again.classes == ["alpha", "beta"]
+    assert again.encoder == single.encoder
+    before, after = single.predict([document]), again.predict([document])
+    assert after[0].values == before[0].values
+    assert after[0].confidences == pytest.approx(before[0].confidences)

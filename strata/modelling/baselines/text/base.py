@@ -234,7 +234,7 @@ class TransformerBase(Windowed, Model):
         )
 
     def load(self, path: Path) -> None:
-        checkpoint = torch.load(path, weights_only=False, map_location=self.device)
+        checkpoint = torch.load(path, weights_only=True, map_location=self.device)
         self.classes = checkpoint["classes"]
         self.encoder = checkpoint.get("encoder", self.encoder)
         self._model = self._build_model(self._label_count())
