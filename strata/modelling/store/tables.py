@@ -6,6 +6,7 @@ that produced them. See ``docs/adr/0005`` and ``docs/adr/0006``.
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     Column,
     DateTime,
     Float,
@@ -73,6 +74,12 @@ run_sample = Table(
     Column("run_id", ForeignKey("run.id", ondelete="CASCADE"), primary_key=True),
     Column("checksum", String(64), primary_key=True),
     Column("side", String(8), nullable=False),
+    #: Which import the label arrived in, and whether a person vouched for
+    #: it, as the manifest said. Null where the manifest did not say, which
+    #: is not the same as False: an unreviewed import is a record, an
+    #: unknown one is a gap.
+    Column("batch", String(64), nullable=True),
+    Column("reviewed", Boolean, nullable=True),
 )
 
 

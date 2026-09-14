@@ -167,3 +167,37 @@ def test_a_curve_does_not_reach_the_history(tmp_path):
     )
 
     assert [v for _, _, v in store.history("demo", "val_accuracy")] == [0.9]
+
+
+def test_a_run_says_how_much_of_what_it_saw_nobody_checked(store):
+    from strata.modelling import Seen, Unchecked
+
+    run = store.record(
+        a_run(),
+        {},
+        saw=[
+            Seen("a" * 64, "train", "batch-1", False),
+            Seen("b" * 64, "train", "batch-1", True),
+            Seen("c" * 64, "train", None, True),
+            Seen("d" * 64, "val", "batch-1", False),
+            Seen("e" * 64, "val", "batch-2", False),
+            # The manifest said nothing: unknown, which is not unreviewed
+            Seen("f" * 64, "val", "batch-2", None),
+        ],
+    )
+    assert store.unchecked(run.id) == [
+        Unchecked("train", None, 1, 0),
+        Unchecked("train", "batch-1", 2, 1),
+        Unchecked("val", "batch-1", 1, 1),
+        Unchecked("val", "batch-2", 2, 1),
+    ]
+
+
+def test_a_run_from_before_this_was_written_down_says_nothing(store):
+    run = store.record(a_run(), {}, saw=[("a" * 64, "train")])
+    from strata.modelling import Unchecked
+
+    # A side without batches or reviews still counts, as unknown rather than unreviewed
+    assert store.unchecked(run.id) == [Unchecked("train", None, 1, 0)]
+    bare = store.record(a_run(), {})
+    assert store.unchecked(bare.id) == []

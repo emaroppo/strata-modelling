@@ -22,7 +22,7 @@ from .plugins.registry import ENTRY_POINT_GROUP, ModelError, absolute, available
 from .requests import PredictRequest, Run, ScoredPath, TrainRequest
 from .store.merge import StoreMergeError, StoreMergeReport, merge_stores
 from .store.predictions import PredictionCache
-from .store.runs import RunStore
+from .store.runs import RunStore, Seen, Unchecked
 
 #: Modules another package may import by path (``docs/adr/0015``).
 PUBLIC_MODULES = frozenset({"stages", "remote.client", "remote.wire", "plugins.registry"})
@@ -37,10 +37,12 @@ __all__ = [
     "Run",
     "RunStore",
     "ScoredPath",
+    "Seen",
     "StoreMergeError",
     "StoreMergeReport",
     "TrainRequest",
     "TrainingError",
+    "Unchecked",
     "absolute",
     "available",
     "examples",

@@ -1,10 +1,12 @@
 """The model catalog: recording runs, and reading their history back."""
 
 import socket
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import NamedTuple
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import case, delete, func, insert, select
 from sqlalchemy.engine import Engine
 
 from strata.common import database
@@ -43,6 +45,26 @@ def new_run_id(origin: str | None = None) -> str:
     """
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
     return f"{stamp}-{host_token(origin)}"
+
+
+class Seen(NamedTuple):
+    """One sample a run saw: its side, and what the manifest said about its label."""
+
+    checksum: str
+    side: str
+    #: Which import the label arrived in; null for a label nothing imported.
+    batch: str | None = None
+    #: Whether a person vouched for it; null where the manifest did not say.
+    reviewed: bool | None = None
+
+
+class Unchecked(NamedTuple):
+    """Of the samples a run saw on one side from one batch, how many nobody checked."""
+
+    side: str
+    batch: str | None
+    samples: int
+    unreviewed: int
 
 
 class RunStoreError(Exception):
@@ -84,15 +106,16 @@ class RunStore:
         run: Run,
         metrics: dict[str, float],
         curve: list[tuple[int, dict[str, float]]] | None = None,
-        saw: list[tuple[str, str]] | None = None,
+        saw: Sequence[Seen | tuple[str, str]] | None = None,
     ) -> Run:
         """Write a completed run, its final metrics, its curve, and what it saw.
 
         The id is minted here. ``curve`` is ``(epoch, metrics)`` oldest
-        first, and ``saw`` is ``(checksum, side)`` for every sample of the
-        manifest the run trained from. Both are written with the run: a run
-        appears only once it finished, and a round that died halfway leaves
-        nothing. See ``docs/adr/0005``.
+        first, and ``saw`` is one :class:`Seen` per sample of the manifest
+        the run trained from, or a bare ``(checksum, side)`` where the
+        producer said nothing about batches or reviews. Both are written
+        with the run: a run appears only once it finished, and a round that
+        died halfway leaves nothing. See ``docs/adr/0005``.
         """
         origin = run.origin or socket.gethostname()
         run_id = run.id or new_run_id(origin)
@@ -118,9 +141,10 @@ class RunStore:
             for epoch, reported in curve or ():
                 self._write_metrics(conn, run_id, reported, epoch=epoch)
             if saw:
+                seen = [entry if isinstance(entry, Seen) else Seen(*entry) for entry in saw]
                 conn.execute(
                     insert(t.run_sample),
-                    [{"run_id": run_id, "checksum": c, "side": s} for c, s in saw],
+                    [{"run_id": run_id, **entry._asdict()} for entry in seen],
                 )
         return run.model_copy(update={"id": run_id, "origin": origin, "metrics": metrics})
 
@@ -195,6 +219,33 @@ class RunStore:
         for side, checksum in rows:
             sides.setdefault(side, []).append(checksum)
         return sides
+
+    def unchecked(self, run_id: str) -> list[Unchecked]:
+        """How much of what this run saw nobody checked, per side and per batch.
+
+        One row per side and import batch, with how many samples it held
+        and how many of those carried a label a person never vouched for.
+        A sample whose manifest said nothing about review counts towards
+        neither, since unknown is not unreviewed. Empty for a run recorded
+        before this was written down.
+        """
+        unreviewed = func.sum(case((t.run_sample.c.reviewed.is_(False), 1), else_=0))
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                select(
+                    t.run_sample.c.side,
+                    t.run_sample.c.batch,
+                    func.count(),
+                    unreviewed,
+                )
+                .where(t.run_sample.c.run_id == run_id)
+                .group_by(t.run_sample.c.side, t.run_sample.c.batch)
+                .order_by(t.run_sample.c.side, t.run_sample.c.batch)
+            ).all()
+        return [
+            Unchecked(side=side, batch=batch, samples=int(samples), unreviewed=int(missed or 0))
+            for side, batch, samples, missed in rows
+        ]
 
     def for_experiment(self, experiment_id: str) -> list[Run]:
         """Every run an experiment file asked for, oldest first."""

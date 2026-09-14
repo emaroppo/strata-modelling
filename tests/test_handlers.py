@@ -440,3 +440,30 @@ def test_an_unresolvable_parent_reference_does_not_block(store, dataset_dir):
         store,
     )
     assert second.parent_run_id == first.id
+
+
+def test_the_run_records_which_of_what_it_saw_nobody_checked(store, dataset_dir):
+    """From the manifest's batch and reviewed, per side and per batch."""
+    from strata.labels import MANIFEST_NAME
+    from strata.modelling import Unchecked
+
+    directory = dataset_dir(n_train=4, n_val=2)
+    manifest = json.loads((directory / MANIFEST_NAME).read_text())
+    for sample in manifest["samples"]:
+        # Two batches of imports on the training side, one of them checked;
+        # the validation side entirely an unreviewed import
+        index = int(sample["checksum"])
+        if sample["split"] == "train":
+            sample["batch"] = "first" if index < 2 else "second"
+            sample["reviewed"] = index < 2
+        else:
+            sample["batch"] = "second"
+            sample["reviewed"] = False
+    (directory / MANIFEST_NAME).write_text(json.dumps(manifest))
+
+    run = train(TrainRequest(dataset_dir=directory, model=COUNTER), store)
+    assert store.unchecked(run.id) == [
+        Unchecked("train", "first", 2, 0),
+        Unchecked("train", "second", 2, 2),
+        Unchecked("val", "second", 2, 2),
+    ]

@@ -17,7 +17,7 @@ from .model import Example, Model
 from .plugins.registry import ModelError, absolute, resolve
 from .requests import PredictRequest, Run, ScoredPath, TrainRequest
 from .store import tables as t
-from .store.runs import RunStore
+from .store.runs import RunStore, Seen
 
 
 class TrainingError(Exception):
@@ -122,7 +122,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
         # What this run saw: the side of every sample in the manifest it
         # trained from, inherited or drawn, so the split's realisation is
         # asked of the run rather than of a directory that may be gone
-        saw=[(s.checksum, s.split) for s in manifest.samples],
+        saw=[Seen(s.checksum, s.split, s.batch, s.reviewed) for s in manifest.samples],
     )
     checkpoint = store.checkpoint_path(run.id)
     model.save(checkpoint)
