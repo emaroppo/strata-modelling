@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from strata.labels import Prediction, feature_digest
+from strata.labels import AnyPrediction, feature_digest
 
 from ..handlers import train as run_train
 from ..requests import PredictRequest, TrainRequest
@@ -148,7 +148,7 @@ def run_prediction(
     paths = catalog.ensure_cached(wanted, cache, on_progress=fetching)
     unknown = [c for c in wanted if c not in paths]
 
-    made: dict[str, Prediction] = {}
+    made: dict[str, AnyPrediction] = {}
     if paths:
         if report is not None:
             report("predicting", 0, len(paths))
@@ -173,7 +173,7 @@ def run_prediction(
     return PredictionResponse(predictions={**already, **made}, unknown=unknown)
 
 
-def metrics_of(store: RunStore, run_id: int) -> dict[str, float]:
+def metrics_of(store: RunStore, run_id: str) -> dict[str, float]:
     from sqlalchemy import select
 
     from ..store import tables as t

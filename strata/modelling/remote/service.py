@@ -82,13 +82,13 @@ def build():
 
     served: dict[str, str | None] = {}
 
-    def served_catalog_id() -> str | None:
+    def served_catalog_id() -> str:
         # Memoised: a catalog's identity does not change under a running
         # host, and the alternative is a connection per submitted round
         # spent asking a question with one answer.
         if "id" not in served:
             served["id"] = catalog_for().id
-        return served["id"]
+        return str(served["id"])
 
     def run_one(request: RoundRequest, report) -> RoundResponse:
         return run_round(request, catalog_for(), store, datasets, cache, report=report)
@@ -142,8 +142,10 @@ def build():
                 "the samples it would have to fetch to score them.",
             )
 
+        cache_dir = cache
+
         def run_it(req, report):
-            return run_prediction(req, catalog_for(), store, cache, report)
+            return run_prediction(req, catalog_for(), store, cache_dir, report)
 
         try:
             return jobs.submit(request, runner=run_it)

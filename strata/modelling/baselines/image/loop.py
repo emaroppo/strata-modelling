@@ -2,6 +2,7 @@
 
 import torch
 import torch.nn as nn
+from torch.amp.grad_scaler import GradScaler
 
 from .._shared import epoch_progress, predict_progress
 
@@ -11,7 +12,7 @@ def fit(backbone, loader, criterion, *, lr, num_epochs, device, count_correct, o
     optimizer = torch.optim.AdamW(backbone.parameters(), lr=lr, weight_decay=1e-2)
     # fp16 autocast roughly halves activation memory; no-op off CUDA
     use_amp = device.type == "cuda"
-    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+    scaler = GradScaler("cuda", enabled=use_amp)
     # Per-step warmup then cosine decay: the first high-LR steps on a
     # fresh head are where fine-tuning occasionally diverged
     total_steps = num_epochs * len(loader)

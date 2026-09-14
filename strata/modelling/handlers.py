@@ -53,7 +53,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
             f"Either declare it, or use a model without an implicit negative class."
         )
 
-    declared = {f.get("name") for f in manifest.features}
+    declared: set[str] = {str(f["name"]) for f in manifest.features if f.get("name")}
     unmet = [f for f in model.requires_features if f not in declared]
     if unmet:
         # Before the round rather than during it, the same as an undeclared

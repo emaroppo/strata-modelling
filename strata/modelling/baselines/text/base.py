@@ -1,7 +1,7 @@
 """The training loop the text heads share, over a windowed encoder."""
 
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, cast
 
 import torch
 import torch.nn as nn
@@ -76,7 +76,7 @@ class TransformerBase(Windowed, Model):
         self.window_aggregation = window_aggregation
         self.device = pick_device(device)
         self.classes: list[str] = []
-        self._model = None
+        self._model: nn.Module | None = None
 
     # -- pieces the heads differ on ------------------------------------------
 
@@ -96,6 +96,11 @@ class TransformerBase(Windowed, Model):
     def _label_count(self) -> int:
         return len(self.classes)
 
+    def _net(self) -> nn.Module:
+        if self._model is None:
+            raise RuntimeError("Model has no weights. Call finetune() or load() first.")
+        return self._model
+
     # -- shared --------------------------------------------------------------
 
     def _prepare(self, classes: list[str]) -> None:
@@ -111,10 +116,11 @@ class TransformerBase(Windowed, Model):
                 f"Class list grew {len(self.classes)} -> {len(classes)}; "
                 "rebuilding the head, encoder weights kept."
             )
-            body = self._model.base_model
+            # A transformers model: base_model is its encoder, an nn.Module
+            body = cast(nn.Module, self._net().base_model)
             self.classes = list(classes)
             self._model = self._build_model(self._label_count())
-            self._model.base_model.load_state_dict(body.state_dict())
+            cast(nn.Module, self._net().base_model).load_state_dict(body.state_dict())
             return
         console.print(
             "[yellow]Class list changed incompatibly; starting from the "
@@ -145,13 +151,13 @@ class TransformerBase(Windowed, Model):
     ) -> dict:
         self._prepare(classes)
         dataset, loader = self._loader(train, shuffle=True)
-        optimizer = torch.optim.AdamW(self._model.parameters(), lr=self.lr, weight_decay=0.01)
+        optimizer = torch.optim.AdamW(self._net().parameters(), lr=self.lr, weight_decay=0.01)
         total_steps = max(1, self.num_epochs * len(loader))
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer, max_lr=self.lr, total_steps=total_steps, pct_start=0.1
         )
 
-        self._model.train()
+        self._net().train()
         total_loss = 0.0
         seen = 0
         with epoch_progress("loss={task.fields[loss]:.4f}") as progress:
@@ -163,9 +169,9 @@ class TransformerBase(Windowed, Model):
                 for batch in loader:
                     batch = {k: v.to(self.device) for k, v in batch.items()}
                     optimizer.zero_grad()
-                    outputs = self._model(**batch)
+                    outputs = self._net()(**batch)
                     outputs.loss.backward()
-                    nn.utils.clip_grad_norm_(self._model.parameters(), 1.0)
+                    nn.utils.clip_grad_norm_(self._net().parameters(), 1.0)
                     optimizer.step()
                     scheduler.step()
                     total_loss += outputs.loss.item() * batch["input_ids"].size(0)
@@ -183,22 +189,22 @@ class TransformerBase(Windowed, Model):
 
     def _evaluate(self, samples: list[Example]) -> dict:
         _, loader = self._loader(samples, shuffle=False)
-        self._model.eval()
+        self._net().eval()
         total_loss = 0.0
         seen = 0
         with torch.no_grad():
             for batch in loader:
                 batch = {k: v.to(self.device) for k, v in batch.items()}
-                outputs = self._model(**batch)
+                outputs = self._net()(**batch)
                 total_loss += outputs.loss.item() * batch["input_ids"].size(0)
                 seen += batch["input_ids"].size(0)
-        self._model.train()
+        self._net().train()
         return {"val_loss": total_loss / max(seen, 1)}
 
     def predict(self, paths: list[Path], on_batch=None, *, features=None) -> list:
         if self._model is None or not self.classes:
             raise RuntimeError("Model has no weights. Call finetune() or load() first.")
-        self._model.eval()
+        self._net().eval()
         outputs = []
         with torch.no_grad(), predict_progress() as progress:
             task = progress.add_task("predict", total=len(paths))
@@ -213,7 +219,7 @@ class TransformerBase(Windowed, Model):
                         for k, v in item.items()
                         if k in ("input_ids", "attention_mask", "token_type_ids")
                     }
-                    logits = self._model(**fields).logits[0]
+                    logits = self._net()(**fields).logits[0]
                     per_window.append(self._decode(text, logits, item["offsets"]))
                 outputs.append(self._merge(text, per_window))
                 progress.advance(task)
@@ -226,7 +232,7 @@ class TransformerBase(Windowed, Model):
             raise RuntimeError("No model to save.")
         torch.save(
             {
-                "state_dict": self._model.state_dict(),
+                "state_dict": self._net().state_dict(),
                 "classes": self.classes,
                 "encoder": self.encoder,
             },
@@ -238,4 +244,4 @@ class TransformerBase(Windowed, Model):
         self.classes = checkpoint["classes"]
         self.encoder = checkpoint.get("encoder", self.encoder)
         self._model = self._build_model(self._label_count())
-        self._model.load_state_dict(checkpoint["state_dict"])
+        self._net().load_state_dict(checkpoint["state_dict"])

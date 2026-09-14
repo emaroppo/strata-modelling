@@ -1,7 +1,6 @@
 """The train stage: a run from a materialised directory, here or on the modelling host."""
 
 from pathlib import Path
-from typing import Literal
 
 from pydantic import Field
 
@@ -12,7 +11,7 @@ from ..remote.checks import check_catalog
 from ..remote.client import RemoteError
 from ..remote.wire import RoundRequest, SplitSides
 from ..requests import Run, TrainRequest
-from ._context import Context, DatasetIdentity, StageError, Strict, _manifest
+from ._context import Context, DatasetIdentity, Host, StageError, Strict, Where, _manifest
 
 
 class TrainStageRequest(Strict):
@@ -44,7 +43,7 @@ class TrainStageRequest(Strict):
 class TrainRecord(Strict):
     run_id: str
     parent_run_id: str | None
-    where: Literal["local", "remote"]
+    where: Where
     dataset: str
     dataset_version: int | None
     model: str
@@ -60,7 +59,7 @@ class TrainRecord(Strict):
 def train(request: TrainStageRequest, context: Context) -> TrainRecord:
     if context.host is None:
         return _train_here(request, context)
-    return _train_there(request, context)
+    return _train_there(request, context, context.host)
 
 
 def _train_here(request: TrainStageRequest, context: Context) -> TrainRecord:
@@ -68,6 +67,8 @@ def _train_here(request: TrainStageRequest, context: Context) -> TrainRecord:
         raise StageError("Training here needs a materialised directory; none was given.")
     manifest = _manifest(request.dataset_dir)
     store = context.store
+    if store is None:
+        raise StageError("Training here needs a run store; none was given.")
 
     if request.parent is not None:
         parent = store.get(request.parent)
@@ -101,18 +102,17 @@ def _train_here(request: TrainStageRequest, context: Context) -> TrainRecord:
     return _record(run, "local")
 
 
-def _train_there(request: TrainStageRequest, context: Context) -> TrainRecord:
+def _train_there(request: TrainStageRequest, context: Context, host: Host) -> TrainRecord:
     if request.dataset is None:
         raise StageError(
             "Training on the modelling host needs the dataset's identity — id, name, "
             "version, digest and catalog — for the host to check it means the same there."
         )
-    host = context.host
     client = context.client(host.url, host.token)
     # Asked before anything is sent. A host on another catalog would refuse
     # the round anyway; asking first says which machine to repoint.
     served = client.served_catalog()
-    check_catalog(request.dataset.catalog_id, served.get("id"))
+    check_catalog(request.dataset.catalog_id, str(served.get("id") or ""))
     # The split as this side's directory has it, inherited or drawn, sent
     # positionally with a proof of the order. Without it the host would
     # train on the version's own sides, and a drawn holdout would be scored
@@ -155,7 +155,7 @@ def _train_there(request: TrainStageRequest, context: Context) -> TrainRecord:
     )
 
 
-def _record(run: Run, where: str) -> TrainRecord:
+def _record(run: Run, where: Where) -> TrainRecord:
     return TrainRecord(
         run_id=run.id,
         parent_run_id=run.parent_run_id,

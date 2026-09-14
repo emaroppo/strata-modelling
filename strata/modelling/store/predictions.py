@@ -7,6 +7,7 @@ model produced and reads it back through the discriminator. See
 ``docs/adr/0006``.
 """
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from pydantic import TypeAdapter
@@ -52,7 +53,7 @@ class PredictionCache:
         run_id: str,
         checksums: list[str],
         digests: dict[str, str] | None = None,
-    ) -> dict[str, Prediction]:
+    ) -> dict[str, AnyPrediction]:
         """Whatever of ``checksums`` this run has already answered.
 
         ``digests`` says what the model was told about each sample, by
@@ -64,7 +65,7 @@ class PredictionCache:
         Omitted, every lookup uses the empty digest, which is what a
         project declaring no features has always written.
         """
-        found: dict[str, Prediction] = {}
+        found: dict[str, AnyPrediction] = {}
         if not checksums:
             return found
         digests = digests or {}
@@ -89,7 +90,7 @@ class PredictionCache:
     def put(
         self,
         run_id: str,
-        made: dict[str, Prediction],
+        made: Mapping[str, Prediction],
         digests: dict[str, str] | None = None,
     ) -> int:
         """Record what a run said. Rewriting an entry is a no-op by construction."""

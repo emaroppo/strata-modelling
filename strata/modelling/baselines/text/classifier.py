@@ -80,7 +80,7 @@ class TextClassifier(TransformerBase):
 
         keep = combined if how == "any" else {n: s for n, s in combined.items() if s > 0.5}
         if not keep:
-            keep = {max(combined, key=combined.get): max(combined.values())}
+            keep = {max(combined, key=lambda n: combined[n]): max(combined.values())}
         order = sorted(keep, key=lambda n: keep[n], reverse=True)
         # Built in one construction: confidences are positional against
         # values, so appending to a value already made reassigns them.

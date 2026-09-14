@@ -1,6 +1,7 @@
 """Reading images into tensors: decoding, letterboxing, and the two datasets."""
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from PIL import Image, ImageFile
@@ -47,7 +48,7 @@ class LetterboxSquash:
             content_w, content_h = self.size, round(self.size / residual)
         else:
             content_w, content_h = round(self.size / residual), self.size
-        img = img.resize((content_w, content_h), Image.BILINEAR)
+        img = img.resize((content_w, content_h), Image.Resampling.BILINEAR)
         canvas = Image.new("RGB", (self.size, self.size))
         canvas.paste(img, ((self.size - content_w) // 2, (self.size - content_h) // 2))
         return canvas
@@ -62,7 +63,7 @@ class ImageDataset(Dataset):
         classes: list[str],
         transform,
         draft_size: int | None = None,
-        target_fn=None,
+        target_fn: Callable[[list, dict[str, int]], object] | None = None,
     ):
         self.samples = samples
         self.class_to_idx = {c: i for i, c in enumerate(classes)}
@@ -76,6 +77,8 @@ class ImageDataset(Dataset):
     def __getitem__(self, idx: int):
         sample = self.samples[idx]
         image = self.transform(load_rgb(sample.path, self.draft_size))
+        if self.target_fn is None:
+            raise RuntimeError("ImageDataset needs a target_fn to train on")
         return image, self.target_fn(sample.target.values, self.class_to_idx)
 
 

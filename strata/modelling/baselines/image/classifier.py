@@ -8,9 +8,9 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
-from strata.labels import ChoicesPrediction
+from strata.labels import AnyPrediction, ChoicesPrediction
 
-from ...model import Example, Model
+from ...model import BatchReport, Example, Model
 from .._shared import pick_device, threshold_choices
 from . import head, loop
 from .data import ImageDataset, InferenceDataset, LetterboxSquash
@@ -50,8 +50,13 @@ class MultiLabelClassifier(Model):
     def _build_backbone(self, num_classes: int) -> nn.Module:
         return head.build_backbone(num_classes, self.device)
 
+    def _built(self) -> nn.Module:
+        if self._backbone is None:
+            raise RuntimeError("Model has no weights. Call finetune() or load() first.")
+        return self._backbone
+
     def _expand_head(self, num_classes: int) -> None:
-        head.expand_head(self._backbone, num_classes, self.device)
+        head.expand_head(self._built(), num_classes, self.device)
 
     def _prepare_backbone(self, classes: list[str]) -> None:
         self._backbone = head.prepare_backbone(
@@ -160,13 +165,19 @@ class MultiLabelClassifier(Model):
             )
         return metrics
 
-    def predict(self, image_paths: list[Path], on_batch=None, *, features=None) -> list:
+    def predict(
+        self,
+        paths: list[Path],
+        on_batch: BatchReport | None = None,
+        *,
+        features: list[dict] | None = None,
+    ) -> list[AnyPrediction]:
         if self._backbone is None or not self.classes:
             raise RuntimeError("Model has no weights. Call finetune() or load() first.")
-        if not image_paths:
+        if not paths:
             return []
         loader = self._loader(
-            InferenceDataset(image_paths, self._transform(train=False), draft_size=self.IMG_SIZE),
+            InferenceDataset(paths, self._transform(train=False), draft_size=self.IMG_SIZE),
             # No gradients or optimizer state at inference: much larger batches
             # fit, and JPEG decode needs more workers to keep the GPU fed
             batch_size=self.batch_size * 4,
@@ -176,7 +187,7 @@ class MultiLabelClassifier(Model):
         probs = loop.predict_probs(
             self._backbone,
             loader,
-            total=len(image_paths),
+            total=len(paths),
             device=self.device,
             activation=self._activation,
             on_batch=on_batch,

@@ -5,14 +5,14 @@ from typing import Literal
 
 from pydantic import Field
 
-from strata.labels import feature_digest
+from strata.labels import Choices, feature_digest
 
 from .. import handlers
 from ..remote.client import RemoteError
 from ..remote.wire import PredictionRequest
 from ..requests import PredictRequest
 from ..store.predictions import PredictionCache
-from ._context import Context, StageError, Strict, _manifest
+from ._context import Context, StageError, Strict, Where, _manifest
 
 # ----------------------------------------------------------------------
 # evaluate
@@ -39,7 +39,7 @@ class ClassScore(Strict):
 class EvaluateRecord(Strict):
     run_id: str
     side: str
-    where: Literal["local", "remote"]
+    where: Where
     #: Samples with an answer on that side; the denominator.
     samples: int
     #: ``exact_match`` is the share of samples whose asserted set of classes
@@ -73,8 +73,8 @@ def evaluate(request: EvaluateRequest, context: Context) -> EvaluateRecord:
     exact = 0
     counts: dict[str, list[int]] = {}  # class -> [tp, fp, fn]
     for sample in samples:
-        truth = set(sample.value.values)
-        guessed = set(predictions[sample.checksum].values)
+        truth = set(_choices(sample.value).values)
+        guessed = set(_choices(predictions[sample.checksum]).values)
         exact += truth == guessed
         for name in truth | guessed:
             tally = counts.setdefault(name, [0, 0, 0])
@@ -100,6 +100,13 @@ def evaluate(request: EvaluateRequest, context: Context) -> EvaluateRecord:
     )
 
 
+def _choices(value: object) -> Choices:
+    """A classification answer, which is what this stage scores; refused otherwise."""
+    if not isinstance(value, Choices):
+        raise StageError(f"evaluate scores classification only; got {type(value).__name__}")
+    return value
+
+
 def _class_score(tally: list[int]) -> ClassScore:
     precision, recall, f1 = _prf(*tally)
     return ClassScore(precision=precision, recall=recall, f1=f1, support=tally[0] + tally[2])
@@ -112,7 +119,7 @@ def _prf(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
     return precision, recall, f1
 
 
-def _predictions(request: EvaluateRequest, context: Context, samples) -> tuple[dict, str]:
+def _predictions(request: EvaluateRequest, context: Context, samples) -> tuple[dict, Where]:
     """What the run says about each sample, from the cache where it can be.
 
     A prediction is a function of a checkpoint, some bytes and the features
@@ -145,7 +152,10 @@ def _predictions(request: EvaluateRequest, context: Context, samples) -> tuple[d
             raise StageError(f"The host's catalog does not know {len(missing)} of the samples.")
         return found, "remote"
 
-    cache = PredictionCache.beside(context.store)
+    store = context.store
+    if store is None:
+        raise StageError("Scoring here needs a run store; none was given.")
+    cache = PredictionCache.beside(store)
     found = cache.get(request.run_id, checksums, digests)
     todo = [s for s in samples if s.checksum not in found]
     if todo:
@@ -155,7 +165,7 @@ def _predictions(request: EvaluateRequest, context: Context, samples) -> tuple[d
                 paths=[Path(request.dataset_dir) / s.path for s in todo],
                 features=[s.features for s in todo],
             ),
-            context.store,
+            store,
         )
         made = {s.checksum: out.value for s, out in zip(todo, scored, strict=True)}
         cache.put(request.run_id, made, digests)

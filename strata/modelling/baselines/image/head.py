@@ -1,5 +1,7 @@
 """The backbone and its classifier head: building one, and growing it as classes are added."""
 
+from typing import Protocol, cast
+
 import timm
 import torch
 import torch.nn as nn
@@ -14,6 +16,16 @@ def build_backbone(num_classes: int, device) -> nn.Module:
     return model.to(device)
 
 
+class Backbone(Protocol):
+    """What this needs of a timm model beyond ``nn.Module``: its head, by name."""
+
+    def get_classifier(self) -> nn.Linear: ...
+
+    def reset_classifier(self, num_classes: int) -> None: ...
+
+    def to(self, device) -> object: ...
+
+
 def expand_head(backbone: nn.Module, num_classes: int, device) -> None:
     """Grow the classifier head, keeping the weights of existing classes.
 
@@ -21,14 +33,16 @@ def expand_head(backbone: nn.Module, num_classes: int, device) -> None:
     neurons start from a fresh init while every existing class keeps the
     row it learned.
     """
-    old = backbone.get_classifier()
+    # A timm model; the head methods are its API, not nn.Module's
+    model = cast(Backbone, backbone)
+    old = model.get_classifier()
     old_weight = old.weight.data.clone()
     old_bias = old.bias.data.clone() if old.bias is not None else None
 
-    backbone.reset_classifier(num_classes)
-    backbone.to(device)
+    model.reset_classifier(num_classes)
+    model.to(device)
 
-    new = backbone.get_classifier()
+    new = model.get_classifier()
     with torch.no_grad():
         new.weight[: old_weight.shape[0]] = old_weight
         if old_bias is not None and new.bias is not None:

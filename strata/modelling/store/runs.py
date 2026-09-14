@@ -156,13 +156,14 @@ class RunStore:
             row = conn.execute(select(t.run).where(t.run.c.id == run_id)).first()
             if row is None:
                 return None
-            metrics = dict(
-                conn.execute(
+            metrics: dict[str, float] = {
+                name: value
+                for name, value in conn.execute(
                     select(t.metric.c.name, t.metric.c.value).where(
                         (t.metric.c.run_id == run_id) & (t.metric.c.epoch.is_(None))
                     )
-                ).all()
-            )
+                )
+            }
         return Run(
             id=row.id,
             parent_run_id=row.parent_run_id,

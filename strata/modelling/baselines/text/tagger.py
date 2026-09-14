@@ -105,7 +105,7 @@ class TextSpanTagger(TransformerBase):
         finally:
             # predict() leaves the model in eval mode, and finetune carries
             # on training after this returns.
-            self._model.train()
+            self._net().train()
         return metrics
 
     def _merge(self, text: str, outputs: list) -> SpansPrediction:

@@ -13,8 +13,10 @@ directory is self-contained, and the remote branch sends a dataset's
 identity for the host to resolve against its own.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -30,6 +32,10 @@ RUN = "run"
 
 
 METRICS = "metrics"
+
+
+#: Where a stage did its work: on this machine, or on the modelling host.
+Where = Literal["local", "remote"]
 
 
 class Strict(BaseModel):
@@ -52,14 +58,15 @@ class Host:
 class Context:
     """The handles: this host's run store, and the other host if there is one."""
 
-    store: RunStore
+    #: None for a round that runs on the host, which keeps its own.
+    store: RunStore | None = None
     host: Host | None = None
     #: What a model reports as it trains, forwarded; see :data:`EpochReport`.
     on_epoch: object = None
     #: A remote job's state as it is polled, for whoever is watching.
     on_state: object = None
     #: How to build the client, so a test can hand in a fake host.
-    client: type = Trainer
+    client: Callable[[str, str], Trainer] = Trainer
 
 
 # ----------------------------------------------------------------------

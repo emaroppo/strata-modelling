@@ -85,5 +85,5 @@ class TextMulticlassClassifier(TextClassifier):
             combined = {name: sum(values) / len(outputs) for name, values in scores.items()}
         else:
             combined = {name: max(values) for name, values in scores.items()}
-        best = max(combined, key=combined.get)
+        best = max(combined, key=lambda n: combined[n])
         return ChoicesPrediction(values=[best], confidences=[round(combined[best], 4)])
