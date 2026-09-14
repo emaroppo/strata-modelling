@@ -27,6 +27,8 @@ Importing this pulls in pytest, so it lives behind the ``test`` extra and
 should only ever be imported from a test module.
 """
 
+from typing import ClassVar
+
 import pytest
 
 from strata.labels import (
@@ -70,7 +72,7 @@ class ModelContract:
     #: and a new label type is added to ``strata.labels`` first — the
     #: unions there are what every layer between a reviewer and a model
     #: reads a value through.
-    PREDICTION_TYPES: dict[str, type] = {
+    PREDICTION_TYPES: ClassVar[dict[str, type]] = {
         "classification": ChoicesPrediction,
         "span": SpansPrediction,
         "bbox": BoxesPrediction,
@@ -109,7 +111,7 @@ class ModelContract:
 
     #: The plainest label set of each task — nothing declared on it, which
     #: is what a label set means before anyone says otherwise.
-    SCHEMA_TYPES: dict[str, type] = {
+    SCHEMA_TYPES: ClassVar[dict[str, type]] = {
         "classification": ClassificationSchema,
         "span": SpanSchema,
         "bbox": BBoxSchema,

@@ -156,7 +156,9 @@ class RunStore:
             row = conn.execute(select(t.run).where(t.run.c.id == run_id)).first()
             if row is None:
                 return None
-            metrics: dict[str, float] = {
+            # A comprehension, not dict(rows): a result has keys(), so dict()
+            # would read it as a mapping and fail
+            metrics: dict[str, float] = {  # noqa: C416
                 name: value
                 for name, value in conn.execute(
                     select(t.metric.c.name, t.metric.c.value).where(

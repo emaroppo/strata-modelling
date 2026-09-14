@@ -1,6 +1,7 @@
 """Training and prediction through the handler both transports call."""
 
 import json
+import re
 
 import pytest
 from counting_model import COUNTER, COUNTING_MODEL
@@ -163,7 +164,7 @@ def test_a_checkpoint_is_written_and_recorded(store, dataset_dir):
 
 
 def test_a_missing_manifest_is_an_error(store, tmp_path):
-    with pytest.raises(TrainingError, match="No manifest.json"):
+    with pytest.raises(TrainingError, match=re.escape("No manifest.json")):
         train(TrainRequest(dataset_dir=tmp_path, model=COUNTER), store)
 
 

@@ -1,5 +1,7 @@
 """Model resolution: short names through the registry, refs for everything else."""
 
+import re
+
 import pytest
 from counting_model import COUNTING_MODEL
 
@@ -30,7 +32,7 @@ def test_a_missing_file_is_an_error(tmp_path):
 
 def test_a_missing_class_names_what_it_looked_in(tmp_path):
     (tmp_path / "mine.py").write_text(COUNTING_MODEL)
-    with pytest.raises(ModelError, match="No class 'Absent' in mine.py"):
+    with pytest.raises(ModelError, match=re.escape("No class 'Absent' in mine.py")):
         resolve("mine.py:Absent", root=tmp_path)
 
 

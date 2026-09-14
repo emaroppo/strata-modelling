@@ -1,6 +1,7 @@
 """Modelling's stages: training here or there, and scoring by one implementation."""
 
 import json
+from typing import ClassVar
 
 import pytest
 from counting_model import COUNTER
@@ -94,8 +95,8 @@ def test_training_here_needs_a_directory(store):
 class FakeHost:
     """The client's surface, answering as a host would."""
 
-    served = {"name": "main", "id": "cat-1"}
-    outcome = {"state": "done"}
+    served: ClassVar[dict] = {"name": "main", "id": "cat-1"}
+    outcome: ClassVar[dict] = {"state": "done"}
 
     def __init__(self, url, token):
         self.url, self.token = url, token
@@ -316,7 +317,7 @@ def test_evaluate_asks_the_host_when_there_is_one(dataset_dir):
 
         def follow(self, job_id, on_state=None):
             cat = {"kind": "choices", "values": ["cat"], "confidences": [0.9]}
-            answers = {c: cat for c in held}
+            answers = dict.fromkeys(held, cat)
             return {"state": "done", "result": {"predictions": answers, "unknown": []}}
 
     scored = evaluate(

@@ -19,6 +19,8 @@ arithmetic against a fake would prove nothing. Built rather than downloaded
 so this runs offline.
 """
 
+from typing import ClassVar
+
 import pytest
 
 torch = pytest.importorskip("torch", reason="needs the text extra")
@@ -99,7 +101,7 @@ class _TextContract(ModelContract):
     #: compared a windowed model with an unwindowed one: padded to different
     #: lengths, the stub's logits differed, and a near-even pair of classes
     #: swapped places about one run in six.
-    WINDOW: dict = {}
+    WINDOW: ClassVar[dict] = {}
 
     def _build(self, tokenizer, monkeypatch):
         instance = self.MODEL(num_epochs=1, batch_size=2, device="cpu", **self.WINDOW)
@@ -175,7 +177,7 @@ class TestWindowedMulticlassClassifier(TestTextMulticlassClassifier):
     part of this head windowing can break.
     """
 
-    WINDOW = {"window": 8, "window_overlap": 2, "window_aggregation": "mean"}
+    WINDOW: ClassVar[dict] = {"window": 8, "window_overlap": 2, "window_aggregation": "mean"}
 
 
 class TestTextSpanTagger(_TextContract):
@@ -207,4 +209,4 @@ class TestWindowedSpanTagger(TestTextSpanTagger):
     list. That is the property windowing is most able to break.
     """
 
-    WINDOW = {"window": 8, "window_overlap": 2}
+    WINDOW: ClassVar[dict] = {"window": 8, "window_overlap": 2}

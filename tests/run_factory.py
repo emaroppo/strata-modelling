@@ -10,15 +10,15 @@ from strata.modelling.store.runs import RunStore
 
 
 def a_run(**overrides) -> Run:
-    base = dict(
-        id="",
-        dataset="demo",
-        dataset_version=1,
-        label_set="demo",
-        model="toy",
-        model_version="1",
-        classes=["cat"],
-    )
+    base = {
+        "id": "",
+        "dataset": "demo",
+        "dataset_version": 1,
+        "label_set": "demo",
+        "model": "toy",
+        "model_version": "1",
+        "classes": ["cat"],
+    }
     return Run(**{**base, **overrides})
 
 

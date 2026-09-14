@@ -8,16 +8,16 @@ import pytest
 
 pytest.importorskip("timm", reason="needs the image extra")
 
-import torch  # noqa: E402
-import torch.nn as nn  # noqa: E402
-from PIL import Image  # noqa: E402
+import torch
+import torch.nn as nn
+from PIL import Image
 
-from strata.modelling.baselines.image import (  # noqa: E402
+from strata.modelling.baselines.image import (
     MulticlassClassifier,
     MultiLabelClassifier,
     PresenceClassifier,
 )
-from strata.modelling.baselines.image.data import LetterboxSquash  # noqa: E402
+from strata.modelling.baselines.image.data import LetterboxSquash
 
 CLASSES = ["cat", "dog", "bird"]
 CLASS_TO_IDX = {name: i for i, name in enumerate(CLASSES)}

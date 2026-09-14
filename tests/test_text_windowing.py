@@ -16,13 +16,13 @@ import pytest
 
 pytest.importorskip("transformers", reason="needs the text extra")
 
-import torch  # noqa: E402
+import torch
 
-from strata.labels import Span, Spans, SpansPrediction  # noqa: E402
-from strata.modelling.baselines.text import (  # noqa: E402
+from strata.labels import Span, Spans, SpansPrediction
+from strata.modelling.baselines.text import (
     TextClassifier,
     TextSpanTagger,
-    bio,  # noqa: E402
+    bio,
 )
 
 CLASSES = ["PER", "ORG"]
@@ -171,7 +171,7 @@ def test_merging_keeps_confidences_paired_with_their_spans(tagger):
             SpansPrediction(values=[early], confidences=[0.99]),
         ],
     )
-    paired = {(s.label, s.start): c for s, c in zip(merged.values, merged.confidences)}
+    paired = {(s.label, s.start): c for s, c in zip(merged.values, merged.confidences, strict=True)}
     assert paired == {("ORG", 10): pytest.approx(0.99), ("PER", 100): pytest.approx(0.11)}
 
 
@@ -219,7 +219,7 @@ def test_the_classifier_aggregates_across_windows(tokenizer):
         ],
     )
     assert merged.values[0] == "a"
-    assert dict(zip(merged.values, merged.confidences))["a"] == pytest.approx(0.9)
+    assert dict(zip(merged.values, merged.confidences, strict=True))["a"] == pytest.approx(0.9)
 
 
 def test_collate_leaves_offsets_out_of_the_model(tagger):
