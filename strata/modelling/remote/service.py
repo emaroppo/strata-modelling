@@ -171,9 +171,9 @@ def build():
     def latest_run(dataset: str, catalog: str | None = None) -> dict:
         """The newest run over a dataset, in this host's numbering.
 
-        A caller cannot work this out for itself: run ids belong to the
-        store that issued them, and the caller's own store is a different
-        sequence naming different models.
+        A caller cannot work this out for itself: a run is minted where it
+        happens, and the caller's own store holds the runs made there, not
+        the ones made here.
         """
         run = store.latest(dataset, catalog)
         if run is None:

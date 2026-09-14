@@ -3,7 +3,7 @@
 These types are the whole interface between a caller and training, whether
 the call is in-process or over a wire. Defining them first is what stops the
 wire format being retrofitted onto an interface that grew in-process — and
-what lets the HTTP adapter, when it arrives, add transport and nothing else.
+what lets the HTTP adapter add transport and nothing else.
 
 Nothing here names a catalog or a database. A train request points at a
 materialised directory, which is self-contained by design.

@@ -14,8 +14,8 @@ import urllib.request
 
 from .wire import PROTOCOL, PROTOCOL_HEADER, PredictionRequest, RoundRequest
 
-#: Generous, because the request is held open for a whole training run and
-#: a timeout here reads as a failed round rather than as a slow one.
+#: The timeout for a call that names none. Every call names one, since a
+#: round is submitted and polled rather than held open (``docs/adr/0007``).
 DEFAULT_TIMEOUT = 4 * 3600
 
 

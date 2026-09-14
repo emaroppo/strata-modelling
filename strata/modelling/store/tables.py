@@ -32,8 +32,9 @@ run = Table(
     # What this run continued from. Null for a cold start, which is the only
     # run whose numbers stand entirely on their own.
     Column("parent_run_id", ForeignKey("run.id"), nullable=True),
-    # Which machine trained it. Provenance is a column rather than part of
-    # the id: an id is immutable and a machine can be renamed or handed on.
+    # Which machine trained it, by name. The id carries a host token for
+    # uniqueness; the name is here because an id is immutable and a machine
+    # can be renamed or handed on.
     Column("origin", String(64), nullable=True),
     # Which catalog the dataset belongs to; a dataset name means something
     # within one. Null is unknown, not "some other". See docs/adr/0008.
