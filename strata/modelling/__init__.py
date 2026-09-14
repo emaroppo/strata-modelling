@@ -18,7 +18,7 @@ that persistence (``docs/adr/0006``).
 
 from .handlers import TrainingError, examples, predict, train
 from .model import Example, Model
-from .plugins.registry import ENTRY_POINT_GROUP, ModelError, available, resolve
+from .plugins.registry import ENTRY_POINT_GROUP, ModelError, absolute, available, resolve
 from .requests import PredictRequest, Run, ScoredPath, TrainRequest
 from .store.merge import StoreMergeError, StoreMergeReport, merge_stores
 from .store.predictions import PredictionCache
@@ -29,6 +29,7 @@ __all__ = [
     "Example",
     "Model",
     "ModelError",
+    "absolute",
     "PredictRequest",
     "ScoredPath",
     "Run",
