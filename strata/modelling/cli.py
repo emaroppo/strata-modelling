@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from .store.merge import StoreMergeError, merge_stores
-from .store.runs import RunStore
+from .store.runs import RunStore, RunStoreMissing
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -52,11 +52,13 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _merge(args) -> int:
-    if not (args.source / "runs.db").exists():
-        print(f"No runs.db under {args.source}.", file=sys.stderr)
+    try:
+        source = RunStore.open(args.source)
+    except RunStoreMissing as e:
+        print(str(e), file=sys.stderr)
         return 1
     report = merge_stores(
-        RunStore.local(args.source),
+        source,
         RunStore.local(args.target),
         checkpoints=args.checkpoints,
         dry_run=not args.apply,

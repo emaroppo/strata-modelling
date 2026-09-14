@@ -26,4 +26,4 @@ def test_merge_reports_then_writes(tmp_path, capsys):
 
 def test_a_directory_without_a_store_is_refused(tmp_path, capsys):
     assert main(["merge", "--from", str(tmp_path / "empty"), "--into", str(tmp_path / "x")]) == 1
-    assert "No runs.db" in capsys.readouterr().err
+    assert "No runs recorded" in capsys.readouterr().err

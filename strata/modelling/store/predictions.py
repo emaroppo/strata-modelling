@@ -14,7 +14,6 @@ from pydantic import TypeAdapter
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from strata.common import database
 from strata.labels import AnyPrediction, Prediction
 
 from . import tables as t
@@ -36,12 +35,14 @@ class PredictionCache:
 
     @classmethod
     def local(cls, root: Path) -> "PredictionCache":
-        """The same database the runs are in, since it is keyed on them."""
-        root = Path(root)
-        root.mkdir(parents=True, exist_ok=True)
-        engine = database.engine(f"sqlite:///{root / 'runs.db'}")
-        t.metadata.create_all(engine)
-        return cls(engine)
+        """The cache in the run store under ``root``, made if there is none.
+
+        The same database the runs are in, since it is keyed on them, and made
+        the way a run store is rather than by building tables of its own.
+        """
+        from .runs import RunStore
+
+        return cls.beside(RunStore.local(root))
 
     @classmethod
     def beside(cls, store) -> "PredictionCache":

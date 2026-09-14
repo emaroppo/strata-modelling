@@ -201,3 +201,32 @@ def test_a_run_from_before_this_was_written_down_says_nothing(store):
     assert store.unchecked(run.id) == [Unchecked("train", None, 1, 0)]
     bare = store.record(a_run(), {})
     assert store.unchecked(bare.id) == []
+
+
+def test_opening_a_store_that_does_not_exist_creates_nothing(tmp_path):
+    from strata.modelling import RunStoreMissing
+
+    root = tmp_path / "runs"
+    with pytest.raises(RunStoreMissing, match="No runs recorded"):
+        RunStore.open(root)
+    assert not root.exists()
+
+
+def test_local_makes_a_store_and_open_reads_it_back(tmp_path):
+    root = tmp_path / "runs"
+    made = RunStore.local(root)
+    run = made.record(a_run(), {"accuracy": 0.5})
+    assert RunStore.open(root).get(run.id) == run
+
+
+def test_a_store_behind_the_code_is_refused_on_open(tmp_path):
+    from sqlalchemy import create_engine
+
+    from strata.common.migrations import SchemaOutOfDate
+
+    root = tmp_path / "runs"
+    RunStore.local(root)
+    with create_engine(f"sqlite:///{root / 'runs.db'}").begin() as conn:
+        conn.exec_driver_sql("DELETE FROM alembic_version")
+    with pytest.raises(SchemaOutOfDate, match="upgrade head"):
+        RunStore.open(root)

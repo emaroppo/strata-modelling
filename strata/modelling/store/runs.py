@@ -67,8 +67,19 @@ class Unchecked(NamedTuple):
     unreviewed: int
 
 
+def _exists(engine: Engine) -> bool:
+    from sqlalchemy import inspect
+
+    inspector = inspect(engine)
+    return inspector.has_table("run") or inspector.has_table("alembic_version")
+
+
 class RunStoreError(Exception):
     """A run store that cannot be used as it stands."""
+
+
+class RunStoreMissing(RunStoreError):
+    """No run store where one was asked for: nothing has trained here."""
 
 
 class RunStore:
@@ -80,19 +91,37 @@ class RunStore:
         self.checkpoints.mkdir(parents=True, exist_ok=True)
 
     @classmethod
+    def open(cls, root: Path) -> "RunStore":
+        """The store under ``root``, which must exist. Nothing is created (``docs/adr/0018``).
+
+        A directory with no store is :class:`RunStoreMissing`; a store behind
+        the code is refused with the command that brings it forward.
+        """
+        root = Path(root)
+        path = root / "runs.db"
+        if not path.exists():
+            raise RunStoreMissing(f"No runs recorded at {root}. Run 'train' first.")
+        engine = database.engine(f"sqlite:///{path}")
+        if not _exists(engine):
+            raise RunStoreMissing(f"No runs recorded at {root}. Run 'train' first.")
+        require_current(engine, MIGRATIONS, "modelling")
+        return cls(engine, root / "checkpoints")
+
+    @classmethod
     def local(cls, root: Path) -> "RunStore":
+        """The store under ``root``, made if there is none and opened if there is.
+
+        For the callers that write: a round, a merge's target, the modelling
+        host. A caller that only consults uses :meth:`open`.
+        """
         root = Path(root)
         root.mkdir(parents=True, exist_ok=True)
-        path = root / "runs.db"
-        engine = database.engine(f"sqlite:///{path}")
-        from sqlalchemy import inspect
-
-        empty = not inspect(engine).has_table("run")
-        t.metadata.create_all(engine)
-        if empty:
-            stamp_if_new(engine, MIGRATIONS)
-        else:
+        engine = database.engine(f"sqlite:///{root / 'runs.db'}")
+        if _exists(engine):
             require_current(engine, MIGRATIONS, "modelling")
+            return cls(engine, root / "checkpoints")
+        t.metadata.create_all(engine)
+        stamp_if_new(engine, MIGRATIONS)
         return cls(engine, root / "checkpoints")
 
     def checkpoint_path(self, run_id: str) -> Path:
