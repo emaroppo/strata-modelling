@@ -114,4 +114,3 @@ def test_a_region_with_no_labels_asserts_nothing():
     # Not an entity, and counting it as one would invent a class
     scores = span_scores([[]], [[Span(labels=[], start=0, end=4)]])
     assert scores["val_span_precision"] == 0.0
-

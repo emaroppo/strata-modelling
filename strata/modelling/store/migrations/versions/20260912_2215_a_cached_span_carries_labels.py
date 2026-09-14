@@ -73,8 +73,9 @@ def _rewrite(convert) -> None:
     bind = op.get_bind()
     columns = _PREDICTION.c
     rows = bind.execute(
-        sa.select(columns.run_id, columns.checksum, columns.feature_digest, columns.value)
-        .where(columns.value.like('%"label"%'))
+        sa.select(columns.run_id, columns.checksum, columns.feature_digest, columns.value).where(
+            columns.value.like('%"label"%')
+        )
     ).all()
     updates = []
     for run_id, checksum, digest, raw in rows:

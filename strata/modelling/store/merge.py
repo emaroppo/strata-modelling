@@ -61,10 +61,7 @@ class StoreMergeReport:
         if self.already_present:
             out.append(f"{self.already_present} already there")
         if self.orphaned:
-            out.append(
-                f"{len(self.orphaned)} whose parent is in neither store, "
-                f"copied as cold"
-            )
+            out.append(f"{len(self.orphaned)} whose parent is in neither store, copied as cold")
         return out
 
 
@@ -127,8 +124,9 @@ def merge_stores(
             with target.engine.begin() as conn:
                 conn.execute(insert(t.run).values(**values))
 
-        report.metrics += _copy(source, target, t.metric, t.metric.c.run_id, row.id,
-                                dry_run, drop_id=True)
+        report.metrics += _copy(
+            source, target, t.metric, t.metric.c.run_id, row.id, dry_run, drop_id=True
+        )
         report.samples += _copy(
             source, target, t.run_sample, t.run_sample.c.run_id, row.id, dry_run
         )
@@ -152,8 +150,9 @@ def _ids(store: RunStore) -> set[str]:
         return set(conn.execute(select(t.run.c.id)).scalars())
 
 
-def _copy(source, target, table, run_column, run_id: str, dry_run: bool,
-          drop_id: bool = False) -> int:
+def _copy(
+    source, target, table, run_column, run_id: str, dry_run: bool, drop_id: bool = False
+) -> int:
     """Copy one run's rows out of a side table."""
     with source.engine.connect() as conn:
         rows = list(conn.execute(select(table).where(run_column == run_id)))

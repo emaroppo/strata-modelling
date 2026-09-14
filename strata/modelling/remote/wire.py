@@ -1,6 +1,5 @@
 """What crosses the wire between a caller and the modelling host, and the protocol both name."""
 
-
 from pydantic import BaseModel, Field
 
 from strata.labels import AnyPrediction

@@ -146,8 +146,6 @@ class PredictionCache:
             return {
                 row[0]: row[1]
                 for row in conn.execute(
-                    select(t.prediction.c.run_id, func.count()).group_by(
-                        t.prediction.c.run_id
-                    )
+                    select(t.prediction.c.run_id, func.count()).group_by(t.prediction.c.run_id)
                 )
             }

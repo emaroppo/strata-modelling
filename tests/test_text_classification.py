@@ -37,9 +37,7 @@ def tokenizer():
     vocab = {"[UNK]": 0, "[PAD]": 1, "alpha": 2, "beta": 3, "gamma": 4}
     backend = Tokenizer(models.WordLevel(vocab, unk_token="[UNK]"))
     backend.pre_tokenizer = pre_tokenizers.Whitespace()
-    return PreTrainedTokenizerFast(
-        tokenizer_object=backend, unk_token="[UNK]", pad_token="[PAD]"
-    )
+    return PreTrainedTokenizerFast(tokenizer_object=backend, unk_token="[UNK]", pad_token="[PAD]")
 
 
 class _Tiny(torch.nn.Module):
@@ -188,9 +186,10 @@ def test_it_will_not_take_the_union_of_its_windows():
 
 
 def test_the_sigmoid_head_still_takes_the_union():
-    assert TextClassifier(
-        device="cpu", window=64, window_aggregation="any"
-    ).window_aggregation == "any"
+    assert (
+        TextClassifier(device="cpu", window=64, window_aggregation="any").window_aggregation
+        == "any"
+    )
 
 
 def test_an_unknown_strategy_is_refused_at_construction():

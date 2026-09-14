@@ -122,9 +122,7 @@ class RunStore:
                     insert(t.run_sample),
                     [{"run_id": run_id, "checksum": c, "side": s} for c, s in saw],
                 )
-        return run.model_copy(
-            update={"id": run_id, "origin": origin, "metrics": metrics}
-        )
+        return run.model_copy(update={"id": run_id, "origin": origin, "metrics": metrics})
 
     def curve(self, run_id: str) -> list[tuple[int, dict[str, float]]]:
         """What a run reported as it trained, oldest epoch first.
@@ -146,9 +144,7 @@ class RunStore:
     def _write_metrics(self, conn, run_id: str, metrics: dict[str, float], epoch=None) -> None:
         for name, value in metrics.items():
             conn.execute(
-                insert(t.metric).values(
-                    run_id=run_id, name=name, value=float(value), epoch=epoch
-                )
+                insert(t.metric).values(run_id=run_id, name=name, value=float(value), epoch=epoch)
             )
 
     def get(self, run_id: str) -> Run | None:

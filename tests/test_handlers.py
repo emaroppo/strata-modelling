@@ -76,9 +76,7 @@ def test_the_run_records_the_model_version(store, dataset_dir):
 
 
 def test_the_split_from_the_manifest_reaches_the_model(store, dataset_dir):
-    run = train(
-        TrainRequest(dataset_dir=dataset_dir(n_train=7, n_val=3), model=COUNTER), store
-    )
+    run = train(TrainRequest(dataset_dir=dataset_dir(n_train=7, n_val=3), model=COUNTER), store)
     assert run.metrics["n_train"] == 7
 
 
@@ -150,9 +148,7 @@ def test_skipped_samples_are_not_training_data(store, dataset_dir):
 
 
 def test_params_reach_the_constructor(store, dataset_dir):
-    run = train(
-        TrainRequest(dataset_dir=dataset_dir(), model=COUNTER, params={"bias": 0.9}), store
-    )
+    run = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER, params={"bias": 0.9}), store)
     assert run.metrics["accuracy"] == pytest.approx(0.9)
     assert run.params == {"bias": 0.9}
 
@@ -214,9 +210,7 @@ def test_a_label_set_shaped_wrong_for_the_model_is_refused(store, dataset_dir):
             sample["value"] = {"kind": "spans", "values": []}
     (root / "manifest.json").write_text(json.dumps(manifest))
     (root / "counter.py").write_text(
-        (root / "counter.py").read_text().replace(
-            'task = "classification"', 'task = "span"'
-        )
+        (root / "counter.py").read_text().replace('task = "classification"', 'task = "span"')
         + REFUSES_OVERLAPS
     )
     with pytest.raises(TrainingError, match="cannot be trained on this label set"):
@@ -237,9 +231,7 @@ def test_a_model_with_nothing_to_say_about_the_schema_trains(store, dataset_dir)
 def test_a_warm_start_loads_the_parent_checkpoint(store, dataset_dir):
     first = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
     second = train(
-        TrainRequest(
-            dataset_dir=dataset_dir(version=2), model=COUNTER, parent_run_id=first.id
-        ),
+        TrainRequest(dataset_dir=dataset_dir(version=2), model=COUNTER, parent_run_id=first.id),
         store,
     )
     assert second.parent_run_id == first.id
@@ -266,17 +258,13 @@ def test_a_cold_start_has_no_parent(store, dataset_dir):
 
 def test_continuing_from_a_missing_run_is_an_error(store, dataset_dir):
     with pytest.raises(TrainingError, match="No run with id 99"):
-        train(
-            TrainRequest(dataset_dir=dataset_dir(), model=COUNTER, parent_run_id="99"), store
-        )
+        train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER, parent_run_id="99"), store)
 
 
 def test_appending_a_class_still_warm_starts(store, dataset_dir):
     first = train(TrainRequest(dataset_dir=dataset_dir(), model=COUNTER), store)
     grown = dataset_dir(version=2, classes=("cat", "dog", "bird"))
-    second = train(
-        TrainRequest(dataset_dir=grown, model=COUNTER, parent_run_id=first.id), store
-    )
+    second = train(TrainRequest(dataset_dir=grown, model=COUNTER, parent_run_id=first.id), store)
     assert second.classes == ["cat", "dog", "bird"]
 
 
@@ -375,9 +363,9 @@ def test_a_model_needing_an_undeclared_class_is_refused(store, dataset_dir):
     # silently, and worst on exactly the samples worth reviewing.
     root = dataset_dir()
     (root / "counter.py").write_text(
-        (root / "counter.py").read_text().replace(
-            '    version = "1"', '    version = "1"\n    requires_classes = ("none",)'
-        )
+        (root / "counter.py")
+        .read_text()
+        .replace('    version = "1"', '    version = "1"\n    requires_classes = ("none",)')
     )
     with pytest.raises(TrainingError, match="does not declare"):
         train(TrainRequest(dataset_dir=root, model=COUNTER), store)
@@ -386,9 +374,9 @@ def test_a_model_needing_an_undeclared_class_is_refused(store, dataset_dir):
 def test_a_declared_requirement_is_accepted(store, dataset_dir):
     root = dataset_dir(classes=("cat", "none"))
     (root / "counter.py").write_text(
-        (root / "counter.py").read_text().replace(
-            '    version = "1"', '    version = "1"\n    requires_classes = ("none",)'
-        )
+        (root / "counter.py")
+        .read_text()
+        .replace('    version = "1"', '    version = "1"\n    requires_classes = ("none",)')
     )
     assert train(TrainRequest(dataset_dir=root, model=COUNTER), store).id
 
@@ -398,9 +386,11 @@ def test_a_requirement_may_depend_on_a_parameter(store, dataset_dir):
     # can say so — here a feature named by a parameter
     root = dataset_dir()
     (root / "counter.py").write_text(
-        (root / "counter.py").read_text().replace(
+        (root / "counter.py")
+        .read_text()
+        .replace(
             "    def __init__(self, bias: float = 0.5):",
-            "    def __init__(self, bias: float = 0.5, told: str = \"\"):\n"
+            '    def __init__(self, bias: float = 0.5, told: str = ""):\n'
             "        self.requires_features = (told,) if told else ()",
         )
     )
@@ -417,9 +407,7 @@ def test_continuing_from_another_model_is_refused(store, dataset_dir):
     )
     with pytest.raises(TrainingError, match="is not a warm start"):
         train(
-            TrainRequest(
-                dataset_dir=other, model="counter.py:Other", parent_run_id=first.id
-            ),
+            TrainRequest(dataset_dir=other, model="counter.py:Other", parent_run_id=first.id),
             store,
         )
 
@@ -446,13 +434,9 @@ def test_an_unresolvable_parent_reference_does_not_block(store, dataset_dir):
     with store.engine.begin() as conn:
         from strata.modelling.store import tables as t
 
-        conn.execute(
-            t.run.update().where(t.run.c.id == first.id).values(model="gone.away:Model")
-        )
+        conn.execute(t.run.update().where(t.run.c.id == first.id).values(model="gone.away:Model"))
     second = train(
-        TrainRequest(
-            dataset_dir=dataset_dir(version=2), model=COUNTER, parent_run_id=first.id
-        ),
+        TrainRequest(dataset_dir=dataset_dir(version=2), model=COUNTER, parent_run_id=first.id),
         store,
     )
     assert second.parent_run_id == first.id

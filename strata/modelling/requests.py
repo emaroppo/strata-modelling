@@ -93,6 +93,7 @@ class Run(BaseModel):
         """
         stamp, _, host = self.id.partition("-")
         return f"{stamp[:15]}-{host}" if host else self.id
+
     dataset: str
     #: None when nothing materialised describes this run's data.
     dataset_version: int | None = None

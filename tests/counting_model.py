@@ -10,7 +10,7 @@ COUNTER = "counter.py:CountingModel"
 #: A model with no dependency on anything. It records what it was given, so
 #: a test can assert on the split it received, and predicts the class it saw
 #: most often — enough to be deterministic without being a real learner.
-COUNTING_MODEL = '''
+COUNTING_MODEL = """
 import json
 from pathlib import Path
 
@@ -50,4 +50,4 @@ class CountingModel(Model):
         self.classes = payload["classes"]
         self.bias = payload["bias"]
         self.seen["warm_started"] = True
-'''
+"""

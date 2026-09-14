@@ -19,9 +19,7 @@ def cache(tmp_path):
 
 
 def guess(*values, confidences=None):
-    return ChoicesPrediction(
-        values=list(values), confidences=confidences or [0.9] * len(values)
-    )
+    return ChoicesPrediction(values=list(values), confidences=confidences or [0.9] * len(values))
 
 
 def test_what_went_in_comes_back(cache):
@@ -126,9 +124,7 @@ def test_it_holds_whatever_a_model_produced(cache):
         values=[Box(label="cat", x=0.1, y=0.2, width=0.3, height=0.4)],
         confidences=[0.6],
     )
-    spans = SpansPrediction(
-        values=[Span(labels=["name"], start=0, end=4)], confidences=[0.7]
-    )
+    spans = SpansPrediction(values=[Span(labels=["name"], start=0, end=4)], confidences=[0.7])
     cache.put("3", {"a" * 64: boxes, "b" * 64: spans})
 
     back = cache.get("3", ["a" * 64, "b" * 64])

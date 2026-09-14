@@ -281,9 +281,7 @@ def test_another_catalogs_folder_of_the_same_name_is_rebuilt(
     assert catalog.materialised == 1
 
 
-def test_the_parent_is_chosen_where_the_checkpoints_are(
-    tmp_path, fixture_dataset, stub_training
-):
+def test_the_parent_is_chosen_where_the_checkpoints_are(tmp_path, fixture_dataset, stub_training):
     from strata.modelling import RunStore
 
     catalog = FakeCatalog("d", 2, fixture_dataset)
@@ -299,9 +297,7 @@ def test_the_parent_is_chosen_where_the_checkpoints_are(
     assert stub_training["request"].parent_run_id == first.run.id
 
 
-def test_fresh_ignores_what_this_host_trained_before(
-    tmp_path, fixture_dataset, stub_training
-):
+def test_fresh_ignores_what_this_host_trained_before(tmp_path, fixture_dataset, stub_training):
     from strata.modelling import RunStore
 
     catalog = FakeCatalog("d", 2, fixture_dataset)
@@ -565,9 +561,7 @@ def test_a_cold_round_takes_the_fresh_params_whatever_was_asked(
     catalog = FakeCatalog("d", 2, fixture_dataset)
     store = RunStore.local(tmp_path / "runs")
     datasets = tmp_path / "datasets"
-    request = _round(
-        params={"num_epochs": 4}, fresh_params={"num_epochs": 8}
-    )
+    request = _round(params={"num_epochs": 4}, fresh_params={"num_epochs": 8})
 
     run_round(request, catalog, store, datasets)
     assert stub_training["request"].params == {"num_epochs": 8}
@@ -833,9 +827,7 @@ def test_declared_features_reach_the_version_the_host_builds(
     assert [spec.as_dict() for spec in catalog.features] == [declared]
 
 
-def test_a_feature_declaration_the_host_cannot_read_is_refused_first(
-    tmp_path, fixture_dataset
-):
+def test_a_feature_declaration_the_host_cannot_read_is_refused_first(tmp_path, fixture_dataset):
     _refused(
         tmp_path,
         FakeCatalog("d", 2, fixture_dataset),

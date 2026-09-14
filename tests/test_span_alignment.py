@@ -36,9 +36,7 @@ def tokenizer():
     vocab = {"[UNK]": 0, "[PAD]": 1, "alpha": 2, "beta": 3, "gamma": 4}
     backend = Tokenizer(models.WordLevel(vocab, unk_token="[UNK]"))
     backend.pre_tokenizer = pre_tokenizers.Whitespace()
-    return PreTrainedTokenizerFast(
-        tokenizer_object=backend, unk_token="[UNK]", pad_token="[PAD]"
-    )
+    return PreTrainedTokenizerFast(tokenizer_object=backend, unk_token="[UNK]", pad_token="[PAD]")
 
 
 @pytest.fixture

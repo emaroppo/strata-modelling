@@ -282,7 +282,7 @@ def test_a_wrong_answer_is_counted(store, dataset_dir):
     # on one and never guessed
     assert scored.per_class["cat"].precision == pytest.approx(0.75)
     assert scored.per_class["cat"].recall == 1.0
-    assert scored.per_class["dog"] .recall == 0.0 and scored.per_class["dog"].support == 1
+    assert scored.per_class["dog"].recall == 0.0 and scored.per_class["dog"].support == 1
 
 
 def test_an_empty_side_is_refused(store, dataset_dir):

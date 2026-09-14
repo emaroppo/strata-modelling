@@ -82,9 +82,7 @@ def run_round(
             manifest.dataset, manifest.catalog_id, since_version=manifest.sides_from_version
         )
     )
-    params = (
-        {**request.params, **request.fresh_params} if previous is None else request.params
-    )
+    params = {**request.params, **request.fresh_params} if previous is None else request.params
 
     # Said before training rather than after, because training is the long
     # part: a stage that only advances when a step finishes spends the whole
@@ -109,9 +107,7 @@ def run_round(
         store,
         on_epoch=epoch,
     )
-    return RoundResponse(
-        run=run, metrics=metrics_of(store, run.id), materialised=materialised
-    )
+    return RoundResponse(run=run, metrics=metrics_of(store, run.id), materialised=materialised)
 
 
 def run_prediction(

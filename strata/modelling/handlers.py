@@ -144,9 +144,7 @@ def predict(request: PredictRequest, store: RunStore, on_batch=None) -> list[Sco
 
     model: Model = _construct(resolve(run.model), run.model, run.params)
     model.load(Path(run.checkpoint))
-    outputs = model.predict(
-        list(request.paths), on_batch, features=request.features or None
-    )
+    outputs = model.predict(list(request.paths), on_batch, features=request.features or None)
     return [
         ScoredPath(path=path, value=value)
         for path, value in zip(request.paths, outputs, strict=True)
@@ -249,16 +247,16 @@ def _warm_start(
 def _refuse_a_different_model(parent: Run, model_cls: type[Model]) -> None:
     """Refuse to continue from a checkpoint another model wrote.
 
-Compared by class name rather than by reference or identity. The same
-    model is recorded under whatever spelling the caller used — a registered
-    short name, or an import path that has since moved — so three references
-    can name one class. Identity is too strict the other way: a model.py
-    copied beside each dataset is a fresh class object every time, and the
-    same model carried around is still the same model.
+    Compared by class name rather than by reference or identity. The same
+        model is recorded under whatever spelling the caller used — a registered
+        short name, or an import path that has since moved — so three references
+        can name one class. Identity is too strict the other way: a model.py
+        copied beside each dataset is a fresh class object every time, and the
+        same model carried around is still the same model.
 
-    A reference that no longer resolves is left alone. That is the ordinary
-    state of a run imported from an older layout, and refusing on it would
-    make history unusable to say nothing about it.
+        A reference that no longer resolves is left alone. That is the ordinary
+        state of a run imported from an older layout, and refusing on it would
+        make history unusable to say nothing about it.
     """
     try:
         was = resolve(parent.model)
@@ -276,9 +274,7 @@ Compared by class name rather than by reference or identity. The same
 
 def _attach_checkpoint(store: RunStore, run: Run, checkpoint: Path) -> Run:
     with store.engine.begin() as conn:
-        conn.execute(
-            update(t.run).where(t.run.c.id == run.id).values(checkpoint=str(checkpoint))
-        )
+        conn.execute(update(t.run).where(t.run.c.id == run.id).values(checkpoint=str(checkpoint)))
     return run.model_copy(update={"checkpoint": checkpoint})
 
 

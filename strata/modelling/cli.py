@@ -22,11 +22,19 @@ def main(argv: list[str] | None = None) -> int:
 
     merge = commands.add_parser("merge", help="Fold another run store into this one")
     merge.add_argument(
-        "--from", dest="source", type=Path, required=True, metavar="DIR",
+        "--from",
+        dest="source",
+        type=Path,
+        required=True,
+        metavar="DIR",
         help="A runs directory: runs.db and its checkpoints",
     )
     merge.add_argument(
-        "--into", dest="target", type=Path, required=True, metavar="DIR",
+        "--into",
+        dest="target",
+        type=Path,
+        required=True,
+        metavar="DIR",
         help="The runs directory to fold it into",
     )
     merge.add_argument(

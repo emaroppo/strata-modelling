@@ -53,9 +53,7 @@ def tokenizer():
         vocab[word] = len(vocab)
     backend = Tokenizer(models.WordLevel(vocab, unk_token="[UNK]"))
     backend.pre_tokenizer = pre_tokenizers.Whitespace()
-    return PreTrainedTokenizerFast(
-        tokenizer_object=backend, unk_token="[UNK]", pad_token="[PAD]"
-    )
+    return PreTrainedTokenizerFast(tokenizer_object=backend, unk_token="[UNK]", pad_token="[PAD]")
 
 
 class _TinyEncoder(torch.nn.Module):
@@ -75,20 +73,17 @@ class _TinyEncoder(torch.nn.Module):
         if labels is not None:
             if self.per_token:
                 loss = torch.nn.functional.cross_entropy(
-                    logits.reshape(-1, self.num_labels), labels.reshape(-1),
+                    logits.reshape(-1, self.num_labels),
+                    labels.reshape(-1),
                     ignore_index=-100,
                 )
             elif labels.dtype == torch.long:
                 # A class index per document: the single-label head. Branched
                 # on the target rather than on a flag, which is what the real
                 # encoder does with `problem_type`.
-                loss = torch.nn.functional.cross_entropy(
-                    logits, labels, ignore_index=-100
-                )
+                loss = torch.nn.functional.cross_entropy(logits, labels, ignore_index=-100)
             else:
-                loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                    logits, labels.float()
-                )
+                loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, labels.float())
         return type("Output", (), {"loss": loss, "logits": logits})()
 
 

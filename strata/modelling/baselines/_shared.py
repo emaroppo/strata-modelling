@@ -58,7 +58,9 @@ def pick_device(name: str | None) -> torch.device:
         or (
             "cuda"
             if torch.cuda.is_available()
-            else "mps" if torch.backends.mps.is_available() else "cpu"
+            else "mps"
+            if torch.backends.mps.is_available()
+            else "cpu"
         )
     )
 

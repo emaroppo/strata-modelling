@@ -123,7 +123,10 @@ def test_the_hosts_reason_is_what_surfaces(monkeypatch):
         if _healthz(request):
             return Reply({"ok": True, "protocol": PROTOCOL})
         raise urllib.error.HTTPError(
-            request.full_url, 400, "Bad Request", {},
+            request.full_url,
+            400,
+            "Bad Request",
+            {},
             _Body(json.dumps({"detail": "register it as an entry point, or run locally"})),
         )
 

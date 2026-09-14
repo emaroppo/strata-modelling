@@ -1,8 +1,5 @@
 """What a round is checked against before it is accepted: catalog, dataset, features, model."""
 
-
-
-
 from ..plugins.registry import available
 from .wire import RoundRequest, ServiceError, SplitSides
 
