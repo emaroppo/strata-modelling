@@ -24,6 +24,9 @@ from .store.merge import StoreMergeError, StoreMergeReport, merge_stores
 from .store.predictions import PredictionCache
 from .store.runs import RunStore
 
+#: Modules another package may import by path (``docs/adr/0015``).
+PUBLIC_MODULES = frozenset({"stages", "remote.client", "remote.wire", "plugins.registry"})
+
 __all__ = [
     "ENTRY_POINT_GROUP",
     "Example",
