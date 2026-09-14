@@ -45,26 +45,6 @@ def new_run_id(origin: str | None = None) -> str:
     return f"{stamp}-{host_token(origin)}"
 
 
-def _refuse_a_store_from_before_string_ids(engine, path: Path) -> None:
-    """Say what is wrong, rather than failing on a missing column later.
-
-    There is no migration from integer run ids; the store is moved aside.
-    See ``docs/adr/0005``.
-    """
-    from sqlalchemy import inspect
-
-    if "run" not in inspect(engine).get_table_names():
-        return
-    columns = {c["name"] for c in inspect(engine).get_columns("run")}
-    if "origin" in columns:
-        return
-    raise RunStoreError(
-        f"{path} predates run ids carrying when and where they were made. "
-        f"Move it aside and a new one will be created:\n"
-        f"  mv {path} {path}.archived"
-    )
-
-
 class RunStoreError(Exception):
     """A run store that cannot be used as it stands."""
 
@@ -91,7 +71,6 @@ class RunStore:
             stamp_if_new(engine, MIGRATIONS)
         else:
             require_current(engine, MIGRATIONS, "modelling")
-        _refuse_a_store_from_before_string_ids(engine, path)
         return cls(engine, root / "checkpoints")
 
     def checkpoint_path(self, run_id: str) -> Path:
@@ -185,10 +164,8 @@ class RunStore:
                 ).all()
             )
         return Run(
-            # Coerced, because a store written before ids were strings holds
-            # integers and SQLite hands them back as it stored them
-            id=str(row.id),
-            parent_run_id=None if row.parent_run_id is None else str(row.parent_run_id),
+            id=row.id,
+            parent_run_id=row.parent_run_id,
             origin=row.origin,
             catalog_id=row.catalog_id,
             experiment_id=row.experiment_id,
@@ -252,9 +229,7 @@ class RunStore:
             run_id = conn.execute(
                 select(t.run.c.id)
                 .where(where)
-                # By time, not by id. Ids are minted where a run happens and
-                # sort by their timestamp, but a store holding both those and
-                # older numeric ones would order them by their first digit.
+                # By time, which is what "latest" asks; the id breaks a tie
                 .order_by(t.run.c.created_at.desc(), t.run.c.id.desc())
                 .limit(1)
             ).scalar_one_or_none()
