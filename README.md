@@ -117,7 +117,7 @@ features as a role (0011), and a model refusing before a round (0014).
 
 ```bash
 .github/sibling-wheels.sh labels common catalog   # the strata packages this one needs, until they are on an index
-uv sync --find-links dist --group dev
+uv sync --find-links dist --group dev --extra service   # --extra all for the frameworks
 uv run pytest
 ```
 
