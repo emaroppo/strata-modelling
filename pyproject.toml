@@ -30,6 +30,12 @@ image = [
 text = [
     "torch>=2.0",
     "transformers>=4.40",
+    # The backend transformers tokenises with. 0.23 hands back one overflow
+    # window where 0.22 hands back every one (2 against 49 for a 2260-token
+    # document at 64 tokens a window), so a long document is silently
+    # truncated to its head; tests/test_text_windowing.py is what catches
+    # it. Pinned until the change is understood.
+    "tokenizers>=0.22,<0.23",
     "rich>=13.0",
 ]
 all = [
