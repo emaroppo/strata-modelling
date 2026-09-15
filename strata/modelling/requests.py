@@ -1,9 +1,8 @@
 """The request is the contract.
 
 These types are the whole interface between a caller and training, whether
-the call is in-process or over a wire. Defining them first is what stops the
-wire format being retrofitted onto an interface that grew in-process — and
-what lets the HTTP adapter add transport and nothing else.
+the call is in-process or over a wire; the HTTP adapter adds transport and
+nothing else. See ``docs/adr/0007``.
 
 Nothing here names a catalog or a database. A train request points at a
 materialised directory, which is self-contained by design.
