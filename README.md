@@ -108,7 +108,7 @@ so far.
 
 ## Decisions
 
-Recorded in the umbrella repository's `docs/adr/`: the manifest as the
+Recorded in the strata umbrella repository's `docs/adr/` (https://github.com/emaroppo/strata/tree/main/docs/adr): the manifest as the
 contract (0004), a run as a chain in a database (0005), a prediction as a
 function of three inputs (0006), one handler and two transports (0007),
 features as a role (0011), and a model refusing before a round (0014).
@@ -116,7 +116,11 @@ features as a role (0011), and a model refusing before a round (0014).
 ## Tests
 
 ```bash
-uv run pytest packages/modelling
+.github/sibling-wheels.sh labels common catalog   # the strata packages this one needs, until they are on an index
+uv sync --find-links dist --group dev
+uv run pytest
 ```
+
+Inside the strata workspace: `uv run pytest packages/modelling` from its root.
 
 Most of the suite runs on the base install with no framework.

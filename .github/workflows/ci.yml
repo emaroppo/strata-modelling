@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Until the strata packages are on an index, each job first builds the
+# wheels of the ones this package depends on from their repositories
+# (.github/sibling-wheels.sh) and resolves against dist/. --no-cache
+# throughout, because every package is 0.1.0 and uv would otherwise hand
+# back whatever it built for that version last time.
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: .github/sibling-wheels.sh labels common catalog
+      - run: uv sync --no-cache --find-links dist --group dev
+      - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync ruff format --check .
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: .github/sibling-wheels.sh labels common catalog
+      - run: uv sync --no-cache --find-links dist --group dev
+      - run: uv run --no-sync pytest -q
+
+  # Split out because the extras pull several GB of wheels. Typed here,
+  # with every extra installed, so an optional framework is a real import
+  # rather than a missing one.
+  tests-extras:
+    name: tests (--extra all)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: .github/sibling-wheels.sh labels common catalog
+      - run: uv sync --no-cache --find-links dist --group dev --extra all
+      - run: uv run --no-sync python -c "import strata.modelling.baselines.image"
+      - run: uv run --no-sync python -c "import strata.modelling.baselines.text"
+      - run: uv run --no-sync pytest -q
+      - run: uv run --no-sync pyright
+
+  # What keeps the package publishable on its own: its wheel is built and
+  # installed alone into a fresh environment, with only what it declares,
+  # and its tests run there. In a checkout everything is installed, so a
+  # package quietly relying on one it does not declare passes every other
+  # job; this is the job it fails.
+  standalone:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: .github/sibling-wheels.sh labels common catalog
+      - run: uv build --wheel --out-dir dist .
+      - run: uv venv --python 3.13 standalone
+      - name: install the package alone
+        # set -f: the extras' brackets are not a glob.
+        run: |
+          set -f
+          uv pip install --no-cache --python standalone/bin/python --find-links dist strata-modelling[test,service] httpx pytest
+      - run: standalone/bin/python -m pytest -q tests
