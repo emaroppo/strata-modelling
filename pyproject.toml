@@ -68,10 +68,38 @@ text = "strata.modelling.baselines.text.classifier:TextClassifier"
 text-multiclass = "strata.modelling.baselines.text.multiclass:TextMulticlassClassifier"
 text-span = "strata.modelling.baselines.text.tagger:TextSpanTagger"
 
-[tool.uv.sources]
-strata-labels = { workspace = true }
-strata-common = { workspace = true }
-strata-catalog = { workspace = true }
+
+# What developing this package alone needs beyond its extras. Inside the
+# strata workspace the root's group is used instead.
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "pyright>=1.1",
+    "httpx>=0.27",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+# The same set as every strata package: pinned, widened once, on purpose.
+select = ["E", "F", "I", "B", "SIM", "DTZ", "UP", "C4", "RUF"]
+
+[tool.ruff.lint.isort]
+# The namespace is one project however many repositories hold it, so a
+# sibling package sorts with this one and not with the third parties.
+known-first-party = ["strata"]
+
+[tool.pyright]
+include = ["strata"]
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
 
 [build-system]
 requires = ["hatchling"]
