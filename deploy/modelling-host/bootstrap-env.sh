@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Generate deploy/gpu/.env for the machine with the GPU.
+# Generate deploy/modelling-host/.env for the machine with the GPU, and
+# render the systemd unit beside it.
 #
-#   ./deploy/gpu/bootstrap-env.sh
+#   ./deploy/modelling-host/bootstrap-env.sh /path/to/config.toml
+#
+# or with $STRATA_CONFIG naming the file, no argument.
 #
 # One value is born here — the token this host and its callers share. Where
 # the catalog is does not go in this file at all: the service reads this
@@ -18,22 +21,35 @@
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-repo=$(cd "$here/../.." && pwd)
+# The strata-modelling checkout: inside the strata workspace, packages/modelling.
+workdir=$(cd "$here/../.." && pwd)
 env_file="$here/.env"
-config="$repo/config.toml"
+unit="$here/strata-modelling.service"
+config=${1:-${STRATA_CONFIG:-}}
 
 if [ -e "$env_file" ]; then
     echo "$env_file already exists. Move it aside first if you mean to start over." >&2
     exit 1
 fi
+if [ -z "$config" ]; then
+    echo "Which config.toml? Pass its path, or set STRATA_CONFIG. The service reads" >&2
+    echo "its catalog from that file, as the CLI does." >&2
+    exit 1
+fi
+config=$(cd "$(dirname "$config")" && pwd)/$(basename "$config")
 if [ ! -r "$config" ]; then
     echo "No $config. The service reads its catalog from it, as the CLI does." >&2
     exit 1
 fi
+uv_bin=$(command -v uv) || {
+    echo "uv is not on PATH; the unit runs the service through it." >&2
+    exit 1
+}
 
 token=$(openssl rand -hex 32)
 modelling_root=${STRATA_MODELLING_ROOT:-$HOME/strata/modelling}
-blobs_cache=${STRATA_BLOBS_CACHE:-$repo/catalog/blobs}
+# Beside the config file, which is where a CLI's local catalog is by default.
+blobs_cache=${STRATA_BLOBS_CACHE:-$(dirname "$config")/catalog/blobs}
 mkdir -p "$modelling_root"
 
 umask 077
@@ -66,7 +82,10 @@ STRATA_SERVE_PORT=8082
 EOF
 chmod 600 "$env_file"
 
-echo "Wrote $env_file (0600)."
+sed -e "s#@WORKDIR@#$workdir#" -e "s#@ENV_FILE@#$env_file#" -e "s#@UV@#$uv_bin#" \
+    "$here/strata-modelling.service.in" > "$unit"
+
+echo "Wrote $env_file (0600) and $unit."
 echo
 echo "Still to fill in by hand:"
 echo "  STRATA_S3_ACCESS_KEY / STRATA_S3_SECRET_KEY — the read-only Garage key"
@@ -75,7 +94,7 @@ if [ -z "${PGPASSWORD:-}" ]; then
 fi
 echo
 echo "Then:"
-echo "  cp $here/strata-modelling.service ~/.config/systemd/user/"
+echo "  mkdir -p ~/.config/systemd/user && cp $unit ~/.config/systemd/user/"
 echo "  systemctl --user daemon-reload && systemctl --user enable --now strata-modelling"
 echo "  sudo loginctl enable-linger \$USER"
 echo

@@ -1,10 +1,12 @@
 # Training on the machine with the GPU.
 #
 # A user unit: it runs as you, reads the CUDA setup you already have, and
-# needs no root. Install with
+# needs no root. This is the template; bootstrap-env.sh fills in where the
+# checkout, the .env and uv are and writes strata-modelling.service beside
+# it. Install the rendered unit with
 #
 #   mkdir -p ~/.config/systemd/user
-#   cp deploy/gpu/strata-modelling.service ~/.config/systemd/user/
+#   cp deploy/modelling-host/strata-modelling.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload
 #   systemctl --user enable --now strata-modelling
 #
@@ -26,9 +28,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/ubuntu/git/strata
-EnvironmentFile=/home/ubuntu/git/strata/deploy/gpu/.env
-ExecStart=/home/ubuntu/.local/bin/uv run --extra image --extra service strata-modelling
+# The strata-modelling checkout. Inside the strata workspace that is
+# packages/modelling, and uv resolves it to the workspace's environment.
+WorkingDirectory=@WORKDIR@
+EnvironmentFile=@ENV_FILE@
+ExecStart=@UV@ run --extra image --extra service strata-modelling
 
 # A training round is minutes long and a restart mid-round loses it, so the
 # service is restarted on failure rather than kept alive at all costs.
