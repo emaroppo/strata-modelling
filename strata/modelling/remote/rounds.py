@@ -26,9 +26,8 @@ def run_round(
 ) -> RoundResponse:
     """Materialise a dataset version and train from it.
 
-    ``datasets`` is where versions are written. Named by dataset and
-    version, so two rounds over the same version share one directory rather
-    than each fetching a copy.
+    ``datasets`` is where versions are written, named by dataset and
+    version. See ``docs/adr/0007``.
     """
     from strata.catalog import ensure_materialised
 
@@ -42,19 +41,15 @@ def run_round(
         if report is not None:
             report("materialising", done, total)
 
-    # The same rule the laptop uses for when a version already on disk may
-    # be reused, because it is the same function — and with the project's
-    # features, which the host used to leave out, so a remote round trained
-    # on a dataset that did not carry them.
+    # The same reuse rule the laptop uses, because it is the same function,
+    # and with the project's features. docs/adr/0026
     result = ensure_materialised(
         catalog, request.dataset_id, datasets, features=specs, on_progress=tick, cache=cache
     )
     manifest, target, materialised = result.manifest, result.directory, result.fetched
 
-    # The caller's sides, when they are not the version's own: applied to a
-    # copy beside it by the same code the local split stage uses, so a
-    # split drawn on a laptop is what this host trains on rather than the
-    # catalog's assignment it would otherwise silently substitute.
+    # The caller's sides, when they are not the version's own, applied to a
+    # copy beside it by the same code the local split stage uses. docs/adr/0025
     if request.split is not None:
         sides = check_split(request.split, manifest)
         if sides is not None:
@@ -84,9 +79,7 @@ def run_round(
     )
     params = {**request.params, **request.fresh_params} if previous is None else request.params
 
-    # Said before training rather than after, because training is the long
-    # part: a stage that only advances when a step finishes spends the whole
-    # of the expensive step describing the cheap one that preceded it.
+    # Said before training rather than after. docs/adr/0031
     if report is not None:
         report("training")
 
@@ -119,20 +112,15 @@ def run_prediction(
 ) -> PredictionResponse:
     """Score samples by content, fetching whatever bytes are missing.
 
-    The pool a review queue ranks is every unlabelled sample, so this is the
-    expensive half of a push and the reason it belongs on the machine with
-    the GPU rather than the machine with the reviewer.
+    See ``docs/adr/0006``.
     """
     from ..handlers import predict as run_predict
     from ..store.predictions import PredictionCache
 
-    # Kept beside the runs, so the answer is the same for every caller
-    # rather than for whichever machine asked first.
+    # Kept beside the runs. docs/adr/0006
     known = PredictionCache.beside(store)
-    # The host's cache is keyed on the same three inputs the caller's is:
-    # a checkpoint, some bytes, and what the model was told. Computed here
-    # from what arrived rather than sent, so the two sides cannot drift on
-    # how a digest is taken.
+    # Keyed on the same three inputs the caller's cache is; the digest is
+    # computed here from what arrived rather than sent. docs/adr/0006
     digests = {c: feature_digest(request.features.get(c, {})) for c in request.checksums}
     already = known.get(request.run_id, request.checksums, digests)
     wanted = [c for c in request.checksums if c not in already]

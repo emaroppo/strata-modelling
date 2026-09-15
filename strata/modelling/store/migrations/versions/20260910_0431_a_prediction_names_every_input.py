@@ -20,15 +20,8 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Widen the key, keeping every row already computed.
 
-    Autogenerate offered `add_column` alone, which is not enough: the
-    primary key is what stops two answers for one sample, and leaving it at
-    (run_id, checksum) would make a re-score after a feature change collide
-    with the row it is meant to supersede rather than sit beside it.
-
-    Rebuilt rather than altered because the run store is SQLite, which
-    cannot add a column to a primary key. Existing rows carry the empty
-    digest, which is exactly what they are: predictions made when the model
-    was told nothing.
+    Rebuilt rather than altered because SQLite cannot add a column to a
+    primary key. Existing rows carry the empty digest. See ``docs/adr/0006``.
     """
     op.execute("ALTER TABLE prediction RENAME TO prediction_old")
     op.create_table(

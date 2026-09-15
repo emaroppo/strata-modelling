@@ -3,12 +3,9 @@
 Revision ID: 4d54c92d74f2
 Revises: 882788cac3cf
 
-The prediction cache holds spans as the model produced them, and the model
-wrote each with one ``label``. The catalog's spans were rewritten to
-``labels``, a list, in its own chain; the cache follows, so a cached answer
-keeps reading under the one form the value type accepts and nothing
-computed is thrown away. The value column is text, so this is JSON in
-Python. Re-running is a no-op.
+Cached spans written with one ``label`` are rewritten to ``labels``, a
+list, following the catalog's own chain (``docs/adr/0006``). The value
+column is text, so this is JSON in Python. Re-running is a no-op.
 """
 
 from __future__ import annotations

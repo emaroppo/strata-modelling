@@ -214,7 +214,6 @@ class MultiLabelClassifier(Model):
         checkpoint = torch.load(path, weights_only=True, map_location=self.device)
         self.classes = checkpoint["classes"]
         # The checkpoint's config is provenance only: hyperparameters belong
-        # to [model.params], and letting a checkpoint override them made
-        # editing them look like it did nothing
+        # to [model.params]. docs/adr/0005
         self._backbone = self._build_backbone(len(self.classes))
         self._backbone.load_state_dict(checkpoint["state_dict"])

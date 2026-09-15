@@ -1,10 +1,9 @@
 """What the two baseline modules share.
 
-They were written in parallel and grew the same furniture: a console, the
-two progress displays, the device rule, and the threshold that turns
-sigmoid probabilities into a prediction. Here once, so a change to one is a
-change to both — and out of ``baselines/__init__.py``, which the registry
-imports on a base install that has none of these frameworks.
+A console, the two progress displays, the device rule, and the threshold
+that turns sigmoid probabilities into a prediction. Out of
+``baselines/__init__.py``, which the registry imports on a base install
+that has none of these frameworks. See ``docs/adr/0034``.
 """
 
 import torch
@@ -20,11 +19,7 @@ from rich.progress import (
 
 from strata.labels import ChoicesPrediction
 
-#: The console rich itself hands out, not one of our own. Two Console
-#: objects writing to one terminal cannot coordinate: a live display owned
-#: by one knows nothing about text printed through the other, and the two
-#: fight over the same lines — which is what made a progress bar flicker
-#: against a model's own output.
+#: The console rich itself hands out, not one of our own. See ``docs/adr/0030``.
 console = get_console()
 
 

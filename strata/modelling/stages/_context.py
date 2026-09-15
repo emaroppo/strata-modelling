@@ -3,14 +3,12 @@
 ``train`` takes a materialised directory and returns the run it recorded,
 here or on the modelling host — the request says which by whether the
 context names a host, and the record is the same shape either way.
-``evaluate`` scores one side of a directory with a recorded run and
-computes the number by one implementation, which is what makes two runs'
-numbers comparable: a model reports whatever it likes about itself while
-it trains, and that number is its own.
+``evaluate`` scores one side of a directory with a recorded run, by one
+implementation (``docs/adr/0035``).
 
 Requests and records are plain models. Nothing here names a catalog: a
 directory is self-contained, and the remote branch sends a dataset's
-identity for the host to resolve against its own.
+identity for the host to resolve against its own (``docs/adr/0008``).
 """
 
 from collections.abc import Callable

@@ -13,8 +13,7 @@ def fit(backbone, loader, criterion, *, lr, num_epochs, device, count_correct, o
     # fp16 autocast roughly halves activation memory; no-op off CUDA
     use_amp = device.type == "cuda"
     scaler = GradScaler("cuda", enabled=use_amp)
-    # Per-step warmup then cosine decay: the first high-LR steps on a
-    # fresh head are where fine-tuning occasionally diverged
+    # Per-step warmup then cosine decay
     total_steps = num_epochs * len(loader)
     warmup_steps = max(1, min(100, total_steps // 10))
     scheduler = torch.optim.lr_scheduler.SequentialLR(
@@ -69,9 +68,7 @@ def fit(backbone, loader, criterion, *, lr, num_epochs, device, count_correct, o
             total_correct += epoch_correct
             total_samples += epoch_samples
             if on_epoch is not None:
-                # At the epoch boundary rather than per batch: a caller is on
-                # the other end of a network, and a report per step would be
-                # thousands of updates to say the same thing more often.
+                # At the epoch boundary rather than per batch. docs/adr/0031
                 on_epoch(
                     epoch,
                     num_epochs,
@@ -126,8 +123,6 @@ def predict_probs(backbone, loader, *, total: int, device, activation, on_batch=
             progress.advance(task, batch.size(0))
             done += batch.size(0)
             if on_batch is not None:
-                # Per batch rather than per sample: a caller is on the other
-                # end of a network, and thousands of updates say the same
-                # thing more often.
+                # Per batch rather than per sample. docs/adr/0031
                 on_batch(done, total)
     return torch.cat(batches)

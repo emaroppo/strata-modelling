@@ -6,8 +6,7 @@ Revises: 9b1e4c7d2a53
 ``run_sample`` gains, per sample the run saw, which import batch its
 label arrived in and whether a person vouched for it, as the manifest
 said. Both nullable: a run recorded before this has neither, and null
-means unknown rather than unreviewed. With them a run can say how much
-of what it learned from, per side and per batch, nobody checked.
+means unknown rather than unreviewed. See ``docs/adr/0005``.
 """
 
 from __future__ import annotations

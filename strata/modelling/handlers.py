@@ -1,9 +1,7 @@
 """Training and prediction: the handler both transports call.
 
-The in-process path and the HTTP adapter call *these functions*, rather than
-HTTP wrapping a second implementation. So validation happens once, an error
-reads the same locally and remotely, and the failure mode where something
-works on a laptop and 400s against the GPU host cannot arise.
+The in-process path and the HTTP adapter call *these functions*, so
+validation happens once. See ``docs/adr/0007``.
 """
 
 import inspect
@@ -36,17 +34,12 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
             f"set is '{schema.task}'"
         )
 
-    # Built before its requirements are read: a requirement can depend on a
-    # parameter, and only the constructed model knows its parameters.
-    # Construction is seconds where the round is minutes, so a refusal
-    # still comes before the expensive part.
+    # Built before its requirements are read. docs/adr/0014
     model: Model = _construct(model_cls, request.model, request.params)
 
     undeclared = [c for c in model.requires_classes if c not in schema.classes]
     if undeclared:
-        # This model emits a class of its own. Left undeclared, the
-        # prediction is legal here and rejected by whatever displays it —
-        # silently, and worst on exactly the samples worth reviewing.
+        # An implicit class must be declared. docs/adr/0014
         raise TrainingError(
             f"Model {request.model!r} predicts {', '.join(undeclared)}, which this "
             f"label set does not declare (it has: {', '.join(schema.classes)}). "
@@ -56,10 +49,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
     declared: set[str] = {str(f["name"]) for f in manifest.features if f.get("name")}
     unmet = [f for f in model.requires_features if f not in declared]
     if unmet:
-        # Before the round rather than during it, the same as an undeclared
-        # class. A model that needs a feature nobody supplies would train
-        # on whatever a missing value degrades to and report a number for
-        # it — and the degradation is silent by construction.
+        # Refused before the round. docs/adr/0014
         raise TrainingError(
             f"Model {request.model!r} needs feature(s) {', '.join(unmet)}, which "
             f"this dataset does not carry (it has: {', '.join(sorted(declared)) or 'none'}). "
@@ -69,9 +59,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
     try:
         model.requires_schema(schema)
     except ValueError as e:
-        # Before the round rather than during it. A model that cannot
-        # represent this label set's shape would otherwise train on a
-        # projection of it and report a number for the projection.
+        # Refused before the round. docs/adr/0014
         raise TrainingError(
             f"Model {request.model!r} cannot be trained on this label set: {e}"
         ) from None
@@ -82,11 +70,8 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
     if not train_examples:
         raise TrainingError(f"{request.dataset_dir} has no training samples")
 
-    # Kept as well as forwarded. The caller's callback drives a progress bar
-    # and then the number is gone; the store is shaped to hold the curve —
-    # an `epoch` column and an index leading with it — and nothing was ever
-    # putting anything in it. A model that never calls back records no
-    # curve, which is the honest answer rather than a fabricated one.
+    # Kept as well as forwarded; a model that never calls back records no
+    # curve. docs/adr/0005
     curve: list[tuple[int, dict[str, float]]] = []
 
     def collect(done: int, total: int, reported: dict[str, float]) -> bool | None:
@@ -104,14 +89,11 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
             parent_run_id=parent.id if parent else None,
             dataset=manifest.dataset,
             dataset_version=manifest.version,
-            # From the manifest rather than the request: the directory is
-            # the record of what was trained on, and it is the only thing
-            # both the local and the remote path have in common
+            # From the manifest rather than the request. docs/adr/0005
             catalog_id=manifest.catalog_id,
             experiment_id=request.experiment_id,
             label_set=manifest.label_set,
-            # Anchored, so predicting or warm-starting from this run later
-            # does not depend on the dataset directory still being there
+            # Anchored. docs/adr/0005
             model=absolute(request.model, request.dataset_dir),
             model_version=model_cls.version,
             params=request.params,
@@ -119,9 +101,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
         ),
         metrics,
         curve,
-        # What this run saw: the side of every sample in the manifest it
-        # trained from, inherited or drawn, so the split's realisation is
-        # asked of the run rather than of a directory that may be gone
+        # What this run saw: the side of every sample it trained from. docs/adr/0005
         saw=[Seen(s.checksum, s.split, s.batch, s.reviewed) for s in manifest.samples],
     )
     checkpoint = store.checkpoint_path(run.id)
@@ -132,9 +112,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
 def predict(request: PredictRequest, store: RunStore, on_batch=None) -> list[ScoredPath]:
     """Run a recorded checkpoint over some paths.
 
-    Predictions are returned rather than written. Persisting them is the
-    caller's business, and doing it here would put a catalog dependency back
-    into the training core.
+    Predictions are returned rather than written. See ``docs/adr/0006``.
     """
     run = store.get(request.run_id)
     if run is None:
@@ -155,11 +133,9 @@ def predict(request: PredictRequest, store: RunStore, on_batch=None) -> list[Sco
 
 
 def _construct(model_cls: type[Model], name: str, params: dict) -> Model:
-    """Build the model, turning a bad parameter into something readable.
+    """Build the model, turning a bad parameter into a ``TrainingError``.
 
-    In process a wrong keyword is a TypeError from deep inside the
-    constructor. Over a wire it would be a 500 with a traceback, so it is
-    named here instead — one error, the same either side.
+    See ``docs/adr/0007``.
     """
     try:
         return model_cls(**params)
@@ -182,18 +158,15 @@ def _read_manifest(directory: Path) -> Manifest:
     try:
         return Manifest.model_validate_json(path.read_text())
     except ManifestFormatError as e:
-        # Refused rather than rebuilt: the core holds a directory, not a
-        # catalog, so it has nowhere to fetch a fresh copy from. Whoever
-        # handed it the directory does.
+        # Refused rather than rebuilt. docs/adr/0004
         raise TrainingError(f"{directory}: {e}") from None
 
 
 def examples(directory: Path, manifest: Manifest) -> tuple[list[Example], list[Example]]:
     """What a model is handed from a materialised dataset: training, then validation.
 
-    Read through the manifest's own definition. Public because it is the
-    last layer between a reviewer's answer and a model, and every label
-    type is tested through it. See ``docs/adr/0004``.
+    Read through the manifest's own definition. Public so every label type
+    is tested through it. See ``docs/adr/0004``.
     """
     train_examples, val_examples = [], []
     for sample in manifest.samples:
@@ -201,9 +174,7 @@ def examples(directory: Path, manifest: Manifest) -> tuple[list[Example], list[E
             # Skipped: reviewed, nothing applicable, not training data
             continue
         if sample.split == "holdout":
-            # Kept back to measure what training and selection never saw. A
-            # model shown it — even as validation, even once — is a model it
-            # can no longer measure honestly.
+            # Never handed to a model, not even as validation. docs/adr/0003
             continue
         example = Example(
             path=Path(directory) / sample.path,
@@ -224,9 +195,7 @@ def _warm_start(
         raise TrainingError(f"No run with id {request.parent_run_id} to continue from")
     _refuse_a_different_model(parent, type(model))
     if parent.model_version != type(model).version:
-        # Output neurons map to the class list by position, so a checkpoint
-        # from a different version of the model is not merely stale — loading
-        # it corrupts silently instead of failing.
+        # A warm start across a model version is refused. docs/adr/0005
         raise TrainingError(
             f"Run {parent.id} was trained by {parent.model!r} version "
             f"{parent.model_version}, and the installed one is version "
@@ -247,16 +216,8 @@ def _warm_start(
 def _refuse_a_different_model(parent: Run, model_cls: type[Model]) -> None:
     """Refuse to continue from a checkpoint another model wrote.
 
-    Compared by class name rather than by reference or identity. The same
-        model is recorded under whatever spelling the caller used — a registered
-        short name, or an import path that has since moved — so three references
-        can name one class. Identity is too strict the other way: a model.py
-        copied beside each dataset is a fresh class object every time, and the
-        same model carried around is still the same model.
-
-        A reference that no longer resolves is left alone. That is the ordinary
-        state of a run imported from an older layout, and refusing on it would
-        make history unusable to say nothing about it.
+    Compared by class name; a parent reference that no longer resolves is
+    left alone. See ``docs/adr/0025``.
     """
     try:
         was = resolve(parent.model)

@@ -24,7 +24,8 @@ class EvaluateRequest(Strict):
 
     run_id: str
     dataset_dir: Path
-    #: ``holdout`` is what a study reports on; ``val`` is what it selects on.
+    #: ``holdout`` is what a study reports on; ``val`` is what it selects on
+    #: (``docs/adr/0003``).
     side: Literal["val", "holdout"] = "holdout"
 
 
@@ -44,10 +45,7 @@ class EvaluateRecord(Strict):
     samples: int
     #: ``exact_match`` is the share of samples whose asserted set of classes
     #: is exactly the model's; ``precision``, ``recall`` and ``f1`` are micro,
-    #: over every class assertion. A label set that carries two classes per
-    #: sample scored by a model that asserts one has an exact match of zero
-    #: and a precision worth reading, which is why both are here and neither
-    #: is called accuracy.
+    #: over every class assertion. See ``docs/adr/0035``.
     metrics: dict[str, float]
     per_class: dict[str, ClassScore] = Field(default_factory=dict)
 
@@ -56,8 +54,7 @@ def evaluate(request: EvaluateRequest, context: Context) -> EvaluateRecord:
     manifest = _manifest(request.dataset_dir)
     task = manifest.label_schema.task
     if task != "classification":
-        # Honest rather than approximate: a set-of-classes score over spans
-        # or boxes would be a number, and not the one anybody means by it.
+        # Refused rather than approximated. docs/adr/0035
         raise StageError(
             f"evaluate scores classification only for now, and this label set is "
             f"{task!r}. Span-level and box-level scoring are still to come."
@@ -122,9 +119,7 @@ def _prf(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
 def _predictions(request: EvaluateRequest, context: Context, samples) -> tuple[dict, Where]:
     """What the run says about each sample, from the cache where it can be.
 
-    A prediction is a function of a checkpoint, some bytes and the features
-    the model was told, so the cache is keyed on all three and a scored
-    sample is never scored twice.
+    The cache is keyed on checkpoint, bytes and features. See ``docs/adr/0006``.
     """
     digests = {s.checksum: feature_digest(s.features) for s in samples}
     checksums = [s.checksum for s in samples]

@@ -4,13 +4,10 @@ Revision ID: 9b1e4c7d2a53
 Revises: 4d54c92d74f2
 
 Two additions, both nullable or empty for every run already recorded. A
-run gains the id of the experiment file that asked for it, so a study is
-a query over the store rather than a walk of the ledger; a run recorded
+run gains the id of the experiment file that asked for it; a run recorded
 by hand has none. And ``run_sample`` records which side each sample of
-the run's manifest was on — the split as realised, inherited or drawn —
-so what a run saw is asked of the run and not of a directory that may
-since have been deleted. Existing runs have no rows there: what they saw
-was never written down, and a missing row means unknown, not empty.
+the run's manifest was on. Existing runs have no rows there, and a missing
+row means unknown, not empty. See ``docs/adr/0005``.
 """
 
 from __future__ import annotations

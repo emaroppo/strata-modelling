@@ -2,8 +2,7 @@
 
 Four methods, and no knowledge of where its data came from. A model is
 handed file paths and values; it never sees a catalog, a database or Label
-Studio, which is what lets it be tested against a directory and run on a
-machine that has neither.
+Studio. See ``docs/adr/0004``.
 """
 
 from abc import ABC, abstractmethod
@@ -33,20 +32,16 @@ class Example:
     """One labelled sample as a model sees it.
 
     ``target`` is whatever the label set stores — choices for
-    classification, spans for a tagger, boxes for a detector. Naming one
-    concrete type here would say that a model can only ever be trained on
-    that one, which is not what any of the code below assumes.
+    classification, spans for a tagger, boxes for a detector. See
+    ``docs/adr/0004``.
     """
 
     path: Path
     target: AnyValue
     #: What is already known about this sample and may be told to the
     #: model — a species, a coordinate. Empty for a project that declares
-    #: none, which is every project that existed before features did.
-    #:
-    #: Plain values rather than :mod:`strata.labels` ones: a feature read
-    #: from a metadata key has no label shape, and typing this as a label
-    #: value would make the label-set source the only one expressible.
+    #: none. Plain values rather than :mod:`strata.labels` ones. See
+    #: ``docs/adr/0011``.
     features: dict = field(default_factory=dict)
 
 
@@ -58,36 +53,24 @@ class Model(ABC):
     out of Label Studio.
     """
 
-    #: Which task this model handles. Checked before training, so a
-    #: classifier pointed at a span label set fails immediately rather than
-    #: after a queue wait.
+    #: Which task this model handles. Checked before training. See
+    #: ``docs/adr/0014``.
     task: ClassVar[str] = "classification"
 
     #: Classes this model emits that a caller would not otherwise declare.
-    #: A model with an implicit negative class predicts a token nothing else
-    #: knows about, and an annotation tool given one silently drops the
-    #: prediction — so the label set has to declare it, and training refuses
-    #: if it does not.
-    #:
-    #: Read from the built model, not the class: a requirement that depends
-    #: on a parameter is set in the constructor, and a fixed one stays a
-    #: class attribute, which an instance reads all the same.
+    #: The label set has to declare them, and training refuses if it does
+    #: not. Read from the built model, not the class. See ``docs/adr/0014``.
     requires_classes: tuple[str, ...] = ()
 
     #: Features this model cannot predict without. Declared the way
-    #: :attr:`requires_classes` is, and checked the same way — before the
-    #: round rather than during it, once the model is built.
-    #:
-    #: "Cannot predict without", not "cannot train without", and the
-    #: distinction is load-bearing: a model that learns to infer a feature
-    #: as an auxiliary task wants it while training and never at inference.
-    #: Declaring the stronger thing would make that model inexpressible.
+    #: :attr:`requires_classes` is, and checked the same way, before the
+    #: round. "Cannot predict without", not "cannot train without". See
+    #: ``docs/adr/0011``.
     requires_features: tuple[str, ...] = ()
 
     #: Bumped when a change makes existing checkpoints unreadable. A run
     #: records it, and warm-starting from a checkpoint written by a
-    #: different version is refused — output neurons map to the class list by
-    #: position, so a silent mismatch corrupts rather than fails.
+    #: different version is refused. See ``docs/adr/0005``.
     version: ClassVar[str] = "1"
 
     def requires_schema(self, schema) -> None:
@@ -113,20 +96,14 @@ class Model(ABC):
         ``val`` is held out: evaluate on it afterwards and include the
         results, conventionally prefixed ``val_``.
 
-        ``on_epoch(done, total, metrics)`` is called as training proceeds,
-        and exists because training is the long part and the only machine
-        that can see it is the one doing it. A model served over HTTP prints
-        to a journal nobody is reading; a caller watching a round otherwise
-        cannot tell minute one from minute nine. Calling it is optional and
-        a model that ignores it still conforms — the caller must treat
-        silence as "no news", never as "stalled".
+        ``on_epoch(done, total, metrics)`` is called as training proceeds.
+        Calling it is optional and a model that ignores it still conforms;
+        the caller must treat silence as "no news", never as "stalled".
 
-        The callback may return ``True`` to ask the model to stop early — a
-        search ending a trial that is going nowhere. A model that honours it
-        stops after the epoch it just reported and returns its metrics as
-        they stand. Honouring it is optional: a model that ignores the answer
-        still conforms and trains as long as it would have, so asking can
-        make a search cheaper but never makes it wrong.
+        The callback may return ``True`` to ask the model to stop early. A
+        model that honours it stops after the epoch it just reported and
+        returns its metrics as they stand; a model that ignores the answer
+        still conforms. See ``docs/adr/0031``.
         """
         ...
 
@@ -146,7 +123,7 @@ class Model(ABC):
 
         ``on_batch(done, total)`` is called as scoring proceeds, like
         :meth:`finetune`'s ``on_epoch``. A model may ignore it but has to
-        accept it, or a scoring pass fails minutes in.
+        accept it. See ``docs/adr/0031``.
         """
         ...
 

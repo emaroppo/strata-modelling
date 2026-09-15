@@ -48,7 +48,7 @@ class PresenceClassifier(MultiLabelClassifier):
     combination of classes can co-occur. NEGATIVE_LABEL is a dataset marker
     meaning "reviewed, nothing present": it gets no output neuron, trains as
     an all-zeros target, and is emitted as the prediction when no class
-    clears the threshold, so the model cannot contradict itself.
+    clears the threshold. See ``docs/adr/0014``.
     """
 
     NEGATIVE_LABEL = "none"

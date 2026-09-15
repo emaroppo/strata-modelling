@@ -21,8 +21,7 @@ def _over(dataset: str, catalog_id: str | None):
     """The runs over a dataset, within a catalog when one is named.
 
     A run with no catalog recorded matches, since null is unknown rather
-    than "some other": excluding it would cold-start every project whose
-    history predates catalog identities. See ``docs/adr/0008``.
+    than "some other". See ``docs/adr/0008``.
     """
     where = t.run.c.dataset == dataset
     if catalog_id is not None:
@@ -180,8 +179,7 @@ class RunStore:
     def curve(self, run_id: str) -> list[tuple[int, dict[str, float]]]:
         """What a run reported as it trained, oldest epoch first.
 
-        Separate from :meth:`get` because only a chart wants epochs times
-        metrics.
+        Separate from :meth:`get`. See ``docs/adr/0005``.
         """
         with self.engine.connect() as conn:
             rows = conn.execute(
@@ -255,8 +253,8 @@ class RunStore:
         One row per side and import batch, with how many samples it held
         and how many of those carried a label a person never vouched for.
         A sample whose manifest said nothing about review counts towards
-        neither, since unknown is not unreviewed. Empty for a run recorded
-        before this was written down.
+        neither, since unknown is not unreviewed (``docs/adr/0005``). Empty
+        for a run that recorded nothing.
         """
         unreviewed = func.sum(case((t.run_sample.c.reviewed.is_(False), 1), else_=0))
         with self.engine.connect() as conn:
@@ -297,9 +295,8 @@ class RunStore:
         recorded matches, since null is unknown. See ``docs/adr/0008``.
 
         ``since_version`` is the version the dataset's sides descend from:
-        a run over an earlier version trained before a re-split and may have
-        seen what is now held out, so it is not continued. A run that
-        recorded no version is left out too, since it cannot say.
+        a run over an earlier version is not continued, nor is one that
+        recorded no version. See ``docs/adr/0024``.
         """
         where = _over(dataset, catalog_id)
         if since_version is not None:
@@ -308,7 +305,7 @@ class RunStore:
             run_id = conn.execute(
                 select(t.run.c.id)
                 .where(where)
-                # By time, which is what "latest" asks; the id breaks a tie
+                # By time; the id breaks a tie. docs/adr/0005
                 .order_by(t.run.c.created_at.desc(), t.run.c.id.desc())
                 .limit(1)
             ).scalar_one_or_none()
@@ -319,9 +316,8 @@ class RunStore:
     ) -> list[tuple[str, int, float]]:
         """``(run id, dataset version, value)`` for one metric, oldest first.
 
-        Scoped to a catalog when one is given, on the rule ``latest`` uses:
-        a dataset name means something within one catalog, and a history
-        across two is two histories under one name.
+        Scoped to a catalog when one is given, on the rule ``latest`` uses.
+        See ``docs/adr/0008``.
         """
         with self.engine.connect() as conn:
             return [
@@ -334,9 +330,7 @@ class RunStore:
                         & (t.metric.c.name == metric)
                         & (t.metric.c.epoch.is_(None))
                     )
-                    # Oldest first, by when rather than by id — the same
-                    # reason latest does: a store can hold ids minted
-                    # elsewhere, and their order is their timestamps'
+                    # Oldest first, by when rather than by id. docs/adr/0005
                     .order_by(t.run.c.created_at, t.run.c.id)
                 ).all()
             ]
@@ -360,8 +354,7 @@ class RunStore:
     def chain(self, run_id: str) -> list[Run]:
         """A run and everything it continued from, oldest first.
 
-        Warm-started metrics only mean something against the run before
-        them, so the edge has to be walkable.
+        See ``docs/adr/0005``.
         """
         walked: list[Run] = []
         seen: set[str] = set()

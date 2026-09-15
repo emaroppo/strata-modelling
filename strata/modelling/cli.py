@@ -1,9 +1,7 @@
 """``strata-runs``: looking after a run store from the command line.
 
-One command for now, ``merge``, which folds one store into another. A
-project keeps runs beside its own checkpoints and a modelling host keeps
-its own, so a project trained on both has its history split in two.
-Standard library only, for the same reason as ``strata-catalog``.
+One command for now, ``merge``, which folds one store into another.
+Standard library only. See ``docs/adr/0005`` and ``docs/adr/0030``.
 """
 
 import argparse

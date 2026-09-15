@@ -37,10 +37,8 @@ def build():
     )
     from strata.catalog.config import CatalogConfigError, host_catalog, open_catalog
 
-    # The same config.toml format the CLI reads, from the file
-    # $STRATA_CONFIG names — on this host, the CLI's own. Its default is the
-    # catalog this host trains from, so switching is changing that default
-    # and restarting.
+    # The CLI's own config.toml, from the file $STRATA_CONFIG names; its
+    # default is the catalog this host trains from. docs/adr/0019
     try:
         catalog_name, catalog_config = host_catalog()
     except CatalogConfigError as e:
@@ -52,10 +50,8 @@ def build():
     cache = Path(os.environ["STRATA_BLOBS_CACHE"]) if os.environ.get("STRATA_BLOBS_CACHE") else None
 
     def catalog_for() -> Catalog:
-        # Per request rather than once: a long-lived connection to a database
-        # on another machine outlives its usefulness, and training rounds are
-        # far enough apart that reconnecting costs nothing. Opened by the
-        # same code the CLI uses, so the two cannot read a catalog differently.
+        # Per request rather than once, by the same code the CLI uses.
+        # docs/adr/0019
         return open_catalog(catalog_config)
 
     def authorise(authorization: str = Header(default="")) -> None:
@@ -69,8 +65,7 @@ def build():
 
     def spoken(x_strata_protocol: str = Header(default="")) -> None:
         # 426: the request is well formed, and needs a matching release to
-        # be understood. Checked on every call rather than once, because a
-        # laptop can be upgraded, or downgraded, between two of them.
+        # be understood. Checked on every call. docs/adr/0007
         if x_strata_protocol != str(PROTOCOL):
             asked = f"is protocol {x_strata_protocol}" if x_strata_protocol else "names none"
             raise HTTPException(
@@ -98,8 +93,7 @@ def build():
 
     @app.get("/healthz")
     def healthz() -> dict:
-        # Unauthenticated, so a laptop can check it speaks this host's
-        # protocol, and is on its catalog, before sending anything at all
+        # Unauthenticated, so a laptop can check before sending anything. docs/adr/0007
         served = {"name": catalog_name, "id": None}
         try:
             served["id"] = served_catalog_id()
@@ -116,8 +110,7 @@ def build():
     def round_(request: RoundRequest) -> Job:
         """Accept a round and return the job. It runs after this responds."""
         try:
-            # Before accepting, not inside the job: a caller that gets a 202
-            # for a round which cannot run learns nothing until it polls
+            # Before accepting, not inside the job. docs/adr/0007
             check_catalog(request.catalog_id, served_catalog_id())
             try:
                 found = catalog_for().datasets.named(request.dataset_id)
@@ -134,7 +127,7 @@ def build():
 
     @app.post("/predict", dependencies=[Depends(authorise), Depends(spoken)], status_code=202)
     def predict_(request: PredictionRequest) -> Job:
-        """Accept a scoring job. Same queue as training: both need the GPU."""
+        """Accept a scoring job. Same queue as training (``docs/adr/0007``)."""
         if cache is None:
             raise HTTPException(
                 status_code=400,
@@ -159,7 +152,7 @@ def build():
         job = jobs.get(job_id)
         if job is None:
             # A restart loses running jobs; a completed round is in the run
-            # store, which is the half worth recovering
+            # store. docs/adr/0007
             raise HTTPException(
                 status_code=404,
                 detail=f"No job {job_id}. Jobs do not survive a restart of this host; "

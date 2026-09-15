@@ -2,10 +2,8 @@
 
 A project selects one through ``[model] ref`` in ``project.toml``, or points
 at its own ``model.py`` when it needs a bespoke architecture. Each baseline
-is registered under the ``strata.models`` entry point by module, so
-importing one pulls in its framework only when asked for — and the
-frameworks are optional dependencies, so a project carrying its own model
-never installs them.
+is registered under the ``strata.models`` entry point by module, and its
+framework is an optional dependency. See ``docs/adr/0034``.
 """
 
 #: Baseline package -> the install extra carrying its framework

@@ -29,9 +29,8 @@ class Backbone(Protocol):
 def expand_head(backbone: nn.Module, num_classes: int, device) -> None:
     """Grow the classifier head, keeping the weights of existing classes.
 
-    Adding a class should not cost the rounds already trained: the new
-    neurons start from a fresh init while every existing class keeps the
-    row it learned.
+    The new neurons start from a fresh init while every existing class
+    keeps the row it learned. See ``docs/adr/0005``.
     """
     # A timm model; the head methods are its API, not nn.Module's
     model = cast(Backbone, backbone)
@@ -54,11 +53,10 @@ def prepare_backbone(
 ):
     """The backbone to train ``classes`` with, continuing from ``backbone`` when the list allows.
 
-    Training resumes from whatever ``load`` put in place, so each round
-    builds on the last instead of restarting from ImageNet. Appending
-    classes only grows the head; any other change to the list would shift
-    the index each neuron stands for, so the model is rebuilt. ``build``
-    makes a backbone for a class count and ``expand`` grows the current one.
+    Training resumes from whatever ``load`` put in place. Appending classes
+    only grows the head; any other change to the list rebuilds the model.
+    ``build`` makes a backbone for a class count and ``expand`` grows the
+    current one. See ``docs/adr/0005``.
     """
     if backbone is None:
         return build(len(classes))

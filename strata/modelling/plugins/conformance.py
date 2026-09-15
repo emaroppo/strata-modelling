@@ -1,9 +1,8 @@
 """An executable specification of the model contract.
 
 A plugin registering a model is making a promise about behaviour that
-nothing else can check for it — the registry only proves a class can be
-imported. This is the promise, written as tests a plugin runs against its
-own model:
+nothing else can check for it. This is the promise, written as tests a
+plugin runs against its own model (see ``docs/adr/0033``):
 
 .. code-block:: python
 
@@ -23,8 +22,7 @@ contract only — that a checkpoint round-trips, that predictions line up with
 their inputs, that declared classes are honoured. Whether the model is any
 *good* is the plugin's own business.
 
-Importing this pulls in pytest, so it lives behind the ``test`` extra and
-should only ever be imported from a test module.
+Importing this pulls in pytest, so it lives behind the ``test`` extra.
 """
 
 from typing import ClassVar
@@ -47,13 +45,8 @@ def _class_names(values) -> set[str]:
     """The classes a value asserts, whatever kind of value it is.
 
     A classification target names its classes directly; a span or a box
-    carries them on each labelled thing. Reading ``values`` as class names
-    unconditionally is what made this suite classification-only, and it
-    failed as a type error rather than as a contract violation.
-
-    A span carries a *list*, and reading only the first would let a model
-    invent a class in second place and pass the check that exists to stop
-    exactly that.
+    carries them on each labelled thing, and a span carries a *list*, every
+    entry of which is read.
     """
     names: set[str] = set()
     for value in values:
@@ -67,11 +60,8 @@ def _class_names(values) -> set[str]:
 class ModelContract:
     """Subclass this in a plugin's tests and supply the two fixtures."""
 
-    #: What a model of each task emits. Deliberately not a plugin surface:
-    #: a task predicting something not in this table is a new label type,
-    #: and a new label type is added to ``strata.labels`` first — the
-    #: unions there are what every layer between a reviewer and a model
-    #: reads a value through.
+    #: What a model of each task emits. Not a plugin surface: a new label
+    #: type is added to ``strata.labels`` first. See ``docs/adr/0004``.
     PREDICTION_TYPES: ClassVar[dict[str, type]] = {
         "classification": ChoicesPrediction,
         "span": SpansPrediction,
@@ -151,12 +141,11 @@ class ModelContract:
         assert isinstance(model, Model)
 
     def test_it_declares_a_task(self, model):
-        # Checked before training, so a classifier pointed at a span label
-        # set fails immediately rather than after a queue wait
+        # Checked before training. docs/adr/0014
         assert isinstance(type(model).task, str) and type(model).task
 
     def test_it_declares_a_version(self, model):
-        # A run records this, and warm-starting across a change is refused
+        # A run records this, and warm-starting across a change is refused. docs/adr/0005
         assert isinstance(type(model).version, str) and type(model).version
 
     def test_it_accepts_the_label_set_it_is_for(self, model, schema):
@@ -187,13 +176,7 @@ class ModelContract:
     # -- prediction -----------------------------------------------------
 
     def test_finetune_accepts_a_progress_report(self, model, examples, classes):
-        """A model may ignore it, but it has to accept it.
-
-        The caller is often on the other end of a network and cannot see
-        training happen. Reporting is optional — silence means no news, not
-        a stall — but refusing the argument fails the round rather than the
-        contract, and does so ten minutes in.
-        """
+        """A model may ignore it, but it has to accept it. See ``docs/adr/0031``."""
         seen = []
         metrics = model.finetune(
             examples, classes, None, lambda done, total, m: seen.append((done, total))
@@ -205,9 +188,7 @@ class ModelContract:
     def test_finetune_accepts_a_request_to_stop(self, model, examples, classes):
         """Asked to stop, a model may stop or carry on — but it has to finish.
 
-        A search ends a trial that is going nowhere by answering ``True``
-        from ``on_epoch``. Honouring that is optional; falling over because
-        the callback returned something is not.
+        See ``docs/adr/0031``.
         """
 
         def stop(done, total, metrics):
@@ -216,13 +197,7 @@ class ModelContract:
         assert isinstance(model.finetune(examples, classes, None, stop), dict)
 
     def test_predict_accepts_a_progress_report(self, model, examples, classes):
-        """A model may ignore it, but it has to accept it.
-
-        Ranking a review queue means scoring every unlabelled sample, and
-        the machine watching is often not the one doing it. Refusing the
-        argument fails a scoring pass minutes in rather than failing the
-        contract.
-        """
+        """A model may ignore it, but it has to accept it. See ``docs/adr/0031``."""
         model.finetune(examples, classes)
         seen = []
         outputs = model.predict(
@@ -243,8 +218,7 @@ class ModelContract:
         assert all(isinstance(o, expected_prediction) for o in outputs)
 
     def test_predictions_stay_within_the_class_list(self, model, examples, classes):
-        # A class the label set has never heard of cannot be stored, so
-        # inventing one turns into a validation failure much later
+        # A class the label set has never heard of cannot be stored. docs/adr/0014
         model.finetune(examples, classes)
         for output in model.predict([e.path for e in examples]):
             assert _class_names(output.values) <= set(classes)
@@ -252,11 +226,7 @@ class ModelContract:
     def test_predict_accepts_features(self, model, examples, classes):
         """A model may ignore them, but it has to accept them.
 
-        Same rule as ``on_batch``, for the same reason: the caller decides
-        what a project declares, and a model that refuses the argument
-        cannot be used by any project that declares one — which it would
-        discover as a TypeError partway through a scoring pass rather than
-        as a contract failure here.
+        Same rule as ``on_batch``. See ``docs/adr/0031``.
         """
         model.finetune(examples, classes)
         paths = [e.path for e in examples]

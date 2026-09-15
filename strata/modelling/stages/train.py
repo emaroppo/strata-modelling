@@ -18,9 +18,7 @@ class TrainStageRequest(Strict):
     """One round of training, wherever it runs.
 
     Locally the directory is what is trained from. Remotely the host
-    materialises for itself from ``dataset``, and the directory is not
-    needed — a host has the bucket; shipping it the files would be paying
-    the network to avoid using the network.
+    materialises for itself from ``dataset`` (``docs/adr/0007``).
     """
 
     dataset_dir: Path | None = None
@@ -30,7 +28,8 @@ class TrainStageRequest(Strict):
     #: Applied over ``params`` when the round starts cold.
     fresh_params: dict = Field(default_factory=dict)
     #: The warm-start policy, written down: cold, or from a named parent,
-    #: or — neither given — from the newest run over the dataset.
+    #: or — neither given — from the newest run over the dataset
+    #: (``docs/adr/0025``).
     fresh: bool = False
     parent: str | None = None
     #: Declarations only, for the host to resolve as it materialises.
@@ -77,14 +76,12 @@ def _train_here(request: TrainStageRequest, context: Context) -> TrainRecord:
     elif request.fresh:
         parent = None
     else:
-        # Not past a re-split: a run from before it may have trained on
-        # what this version holds out
+        # Not past a re-split. docs/adr/0024
         parent = store.latest(
             manifest.dataset, manifest.catalog_id, since_version=manifest.sides_from_version
         )
-    # Asked after the parent is known, not before. Fresh is a request and
-    # cold is an outcome; they part company when nothing has trained on this
-    # dataset yet, and a cold run then trained for as long as a warm one.
+    # Asked after the parent is known: fresh is a request and cold is an
+    # outcome. docs/adr/0025
     cold = parent is None
     params = {**request.params, **request.fresh_params} if cold else dict(request.params)
 
@@ -109,14 +106,11 @@ def _train_there(request: TrainStageRequest, context: Context, host: Host) -> Tr
             "version, digest and catalog — for the host to check it means the same there."
         )
     client = context.client(host.url, host.token)
-    # Asked before anything is sent. A host on another catalog would refuse
-    # the round anyway; asking first says which machine to repoint.
+    # Asked before anything is sent. docs/adr/0008
     served = client.served_catalog()
     check_catalog(request.dataset.catalog_id, str(served.get("id") or ""))
-    # The split as this side's directory has it, inherited or drawn, sent
-    # positionally with a proof of the order. Without it the host would
-    # train on the version's own sides, and a drawn holdout would be scored
-    # on samples the host had trained on.
+    # The split as this side's directory has it, sent positionally with a
+    # proof of the order. docs/adr/0025
     split = None
     if request.dataset_dir is not None:
         held = _manifest(request.dataset_dir)

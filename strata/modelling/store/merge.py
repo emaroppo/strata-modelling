@@ -1,8 +1,7 @@
 """Folding one run store into another.
 
 A project keeps runs beside its checkpoints and a modelling host keeps its
-own; this puts a history split across both back together. Run ids are
-unique across stores, which is what makes it possible. Checkpoints are
+own; this puts a history split across both back together. Checkpoints are
 left behind unless asked for, and a run whose checkpoint did not come has
 its column cleared. See ``docs/adr/0005``.
 """
@@ -74,9 +73,8 @@ def merge_stores(
 ) -> StoreMergeReport:
     """Copy every run ``target`` does not have out of ``source``.
 
-    Re-runnable: an id the target holds is the same run. Oldest first, so
-    a parent lands before the run that continues it; a parent in neither
-    store is dropped and reported. See ``docs/adr/0005``.
+    Re-runnable: an id the target holds is the same run. Oldest first; a
+    parent in neither store is dropped and reported. See ``docs/adr/0005``.
     """
     if source.engine.url == target.engine.url:
         raise StoreMergeError(
@@ -113,8 +111,7 @@ def merge_stores(
                     shutil.copy2(source_file, destination)
                 values["checkpoint"] = str(destination)
             else:
-                # Asked for and not there: the row must not keep a path to
-                # a file that exists on neither machine
+                # Asked for and not there: the column is cleared. docs/adr/0005
                 values["checkpoint"] = None
         else:
             values["checkpoint"] = None
@@ -140,8 +137,7 @@ def merge_stores(
 
 def _runs(store: RunStore):
     with store.engine.connect() as conn:
-        # Oldest first: a child inserted before its parent violates the
-        # foreign key on any database that enforces one
+        # Oldest first, a parent before its child. docs/adr/0005
         return list(conn.execute(select(t.run).order_by(t.run.c.created_at, t.run.c.id)))
 
 
@@ -162,9 +158,8 @@ def _copy(
     for row in rows:
         values = {c.name: getattr(row, c.name) for c in table.columns}
         if drop_id:
-            # A metric's own id is that store's numbering and means nothing
-            # here; letting the target mint one avoids a collision that has
-            # no meaning to resolve
+            # A metric's own id is that store's numbering; the target mints
+            # its own. docs/adr/0005
             values.pop("id", None)
         payload.append(values)
     if not dry_run:

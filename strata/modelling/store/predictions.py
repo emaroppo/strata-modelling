@@ -1,8 +1,7 @@
 """Predictions already made, so nobody pays for them twice.
 
 Keyed on the run, the sample's checksum and a digest of its features;
-nothing is ever invalidated, and the only reason to drop a row is disk.
-Lives beside the runs, on the machine that did the work. Holds whatever a
+nothing is ever invalidated. Lives beside the runs. Holds whatever a
 model produced and reads it back through the discriminator. See
 ``docs/adr/0006``.
 """
@@ -37,8 +36,7 @@ class PredictionCache:
     def local(cls, root: Path) -> "PredictionCache":
         """The cache in the run store under ``root``, made if there is none.
 
-        The same database the runs are in, since it is keyed on them, and made
-        the way a run store is rather than by building tables of its own.
+        The same database the runs are in. See ``docs/adr/0006``.
         """
         from .runs import RunStore
 
@@ -58,13 +56,11 @@ class PredictionCache:
         """Whatever of ``checksums`` this run has already answered.
 
         ``digests`` says what the model was told about each sample, by
-        :func:`strata.labels.feature_digest`. A checksum whose
-        features have changed since it was scored simply misses — the
-        stored row is still the right answer for the inputs it was computed
-        from, and those inputs are no longer the ones being asked about.
+        :func:`strata.labels.feature_digest`. A checksum whose features
+        have changed since it was scored simply misses (``docs/adr/0006``).
 
         Omitted, every lookup uses the empty digest, which is what a
-        project declaring no features has always written.
+        project declaring no features writes.
         """
         found: dict[str, AnyPrediction] = {}
         if not checksums:
@@ -103,10 +99,7 @@ class PredictionCache:
             if not isinstance(value, Prediction)
         }
         if wrong:
-            # A wrapper around a prediction serialises happily and reads
-            # back as an empty one — pydantic ignores the keys it does not
-            # know — so a cache full of nothing looks exactly like a cache
-            # full of answers until a ranking sorts on them.
+            # A wrapper around a prediction reads back empty. docs/adr/0006
             kinds = ", ".join(sorted(set(wrong.values())))
             raise TypeError(
                 f"A prediction cache holds model output, not {kinds}. "
@@ -125,9 +118,7 @@ class PredictionCache:
         ]
         with self.engine.begin() as conn:
             for chunk in _chunks(rows, 500):
-                # A checkpoint and some bytes give one answer, so a second
-                # write of the same key carries the same value. Ignoring the
-                # conflict keeps a re-run from failing on work it repeated.
+                # A second write of the same key carries the same value. docs/adr/0006
                 conn.execute(
                     sqlite_insert(t.prediction).on_conflict_do_nothing(
                         index_elements=["run_id", "checksum", "feature_digest"]

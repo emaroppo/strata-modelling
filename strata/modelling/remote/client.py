@@ -1,6 +1,5 @@
 """The modelling service's client: asking another host to run the round.
 
-Beside the service because a client belongs with the protocol it speaks.
 What is sent is built from the host's own request models, the protocol is
 checked before anything is sent, a round is submitted and polled, and a
 failed question about a round is not a failed round. Standard library.
@@ -24,12 +23,9 @@ class RemoteError(Exception):
 
 
 class Refused(RemoteError):
-    """The host answered, and its answer was no.
+    """The host answered, and its answer was no. Final; not retried.
 
-    Separate from a host that could not be reached, because the two want
-    opposite handling: a refusal is final and retrying only produces the
-    same no more often, while an unreachable host says nothing at all about
-    the round it is running.
+    See ``docs/adr/0007``.
     """
 
 
@@ -59,8 +55,7 @@ class Trainer:
     def _handshake(self) -> None:
         """Refuse a host on another protocol, before asking it anything.
 
-        Once per client: a host does not change release under a running
-        command, and the check costs a request.
+        Once per client. See ``docs/adr/0007``.
         """
         if self._spoken:
             return
@@ -99,9 +94,7 @@ class Trainer:
             with urllib.request.urlopen(request, timeout=timeout or self.timeout) as response:
                 return json.loads(response.read())
         except urllib.error.HTTPError as e:
-            # The service puts its reason in the body, and that reason is the
-            # whole value of the error — an unservable model says what to do
-            # about it, and a bare 400 says nothing.
+            # The service puts its reason in the body. docs/adr/0007
             detail = _detail(e)
             raise Refused(f"{self.url}{path} refused it: {detail}") from None
         except urllib.error.URLError as e:
@@ -118,8 +111,7 @@ class Trainer:
     def predict(self, request: PredictionRequest) -> dict:
         """Ask for scores. Returns the job; the work runs after this returns.
 
-        Checksums rather than paths, because the point is that this machine
-        has no files — the host has the bucket and a cache of its own.
+        Checksums rather than paths. See ``docs/adr/0007``.
         """
         return self._call("/predict", request.model_dump(mode="json"), timeout=120)
 
@@ -135,9 +127,7 @@ class Trainer:
     def latest_run(self, dataset: str, catalog_id: str | None = None) -> dict | None:
         """The newest run there, or None. Its numbering, not this machine's.
 
-        Scoped to a catalog when one is given: a host serving two of them
-        has two answers to "the latest run over demo", and handing back the
-        wrong one warm-starts from a model trained on other data.
+        Scoped to a catalog when one is given. See ``docs/adr/0008``.
         """
         from urllib.parse import quote
 
@@ -158,9 +148,8 @@ class Trainer:
     def follow(self, job_id: str, on_state=None, interval: float = 3.0, sleep=None) -> dict:
         """Poll until the round finishes, tolerating a network that does not.
 
-        A question that fails to arrive says nothing about the round, so it
-        is retried. What ends this loop is the host answering — that the job
-        is done, that it failed, or that it has never heard of it.
+        A question that fails to arrive is retried; what ends this loop is
+        the host answering. See ``docs/adr/0007``.
         """
         sleep = sleep or time.sleep
         unreachable = 0

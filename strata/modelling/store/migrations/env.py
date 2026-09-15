@@ -3,10 +3,7 @@
 They share one metadata and one SQLite file, so they share one history.
 
 ``$STRATA_RUNS_URL`` names the store, or ``$STRATA_RUNS_ROOT`` a project's
-``runs/`` directory; there is no host-wide default to fall back to. A run
-store belongs to one project or one modelling host, so unlike the catalog
-no setting on the machine could name the right one, and guessing would
-migrate somebody else's runs.
+``runs/`` directory; there is no host-wide default. See ``docs/adr/0019``.
 """
 
 from __future__ import annotations

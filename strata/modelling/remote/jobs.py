@@ -21,7 +21,7 @@ class Job(BaseModel):
 
     id: str
     state: str = QUEUED
-    #: What the host is doing, in words, because a caller cannot see it.
+    #: What the host is doing, in words (``docs/adr/0031``).
     stage: str = "queued"
     done: int = 0
     total: int = 0
@@ -37,8 +37,7 @@ class Job(BaseModel):
 class Jobs:
     """The rounds this host is running, and has run.
 
-    In memory: a thread does not survive a restart, and a completed round
-    is in the run store. See ``docs/adr/0007``.
+    In memory. See ``docs/adr/0007``.
     """
 
     def __init__(self, runner):
@@ -76,8 +75,7 @@ class Jobs:
             job.state = RUNNING
             job.stage = "starting"
             result = runner(request, report)
-            # Set before done, or a caller that sees done first reads a job
-            # with no result and cannot tell success from a lost one
+            # Set before done. docs/adr/0007
             job.result = result
             job.stage = "finished"
             job.state = DONE
