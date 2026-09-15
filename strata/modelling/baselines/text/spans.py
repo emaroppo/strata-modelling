@@ -9,21 +9,14 @@ def _prf(true_positive: int, false_positive: int, false_negative: int) -> tuple:
 
 
 def _entities(spans: list) -> list[tuple[str, int, int]]:
-    """One entity per label a region carries.
-
-    A region marked both PER and ORG asserts two things, and counting it
-    once would be scoring regions rather than entities — which is not what
-    anyone reads an F1 as.
-    """
+    """One entity per label a region carries. See ``docs/adr/0035``."""
     return [(label, s.start, s.end) for s in spans for label in s.labels]
 
 
 def _overlap_matches(predicted: list, truth: list) -> int:
     """Predicted entities overlapping a true one of the same label, paired off.
 
-    One-to-one on purpose: without it, a model emitting one span across a
-    whole sentence would "match" every entity in it and score perfectly for
-    saying almost nothing.
+    One-to-one on purpose. See ``docs/adr/0035``.
     """
     unmatched = list(truth)
     matched = 0
@@ -39,14 +32,9 @@ def _overlap_matches(predicted: list, truth: list) -> int:
 def span_scores(truth: list, predicted: list) -> dict[str, float]:
     """Entity-level precision, recall and F1 over a validation set.
 
-    Two definitions, because neither alone is honest about this kind of
-    data. *Exact* requires the label and both offsets to agree, which is
-    the standard and what a downstream consumer actually gets. *Partial*
-    accepts an overlap of the same label, which is what a reviewer sees:
-    a boundary off by a trailing bracket is a correction, not a miss.
-    Reporting only the first understates the model; only the second
-    flatters it. Per class as well as overall, because the classes here
-    are wildly uneven.
+    *Exact* requires the label and both offsets to agree; *partial* accepts
+    an overlap of the same label. Per class as well as overall. See
+    ``docs/adr/0035``.
 
     ``truth`` and ``predicted`` are parallel lists, one entry per document,
     each a list of spans.

@@ -54,11 +54,10 @@ class TextSpanTagger(TransformerBase):
     def _alignment(self, target, windows) -> dict[str, int]:
         """What this document's spans lose against the tokenizer.
 
-        ``spans_unaligned`` is supervision that never happened: the span
-        reached no token, so nothing taught the model that class.
-        ``spans_inexact`` is a span whose characters do not sit on token
-        boundaries: it trains, but decoding snaps back to whole tokens, which
-        shows as a gap between exact and partial F1 rather than as a bug.
+        ``spans_unaligned`` counts spans that reached no token;
+        ``spans_inexact`` spans whose characters do not sit on token
+        boundaries, which train but decode to whole tokens. See
+        ``docs/adr/0036``.
         """
         spans = [
             span
@@ -89,10 +88,8 @@ class TextSpanTagger(TransformerBase):
         """Loss, and the entity-level numbers a person can read.
 
         Scored from :meth:`predict` rather than from the validation loop's
-        logits: ``predict`` is what reaches the cache, Label Studio and the
-        reviewer, so scoring it measures what the system actually does. The
-        ``evaluate`` stage scores classification today and not spans, so
-        this stays until it does.
+        logits, until the ``evaluate`` stage scores spans. See
+        ``docs/adr/0035``.
         """
         metrics = super()._evaluate(samples)
         try:

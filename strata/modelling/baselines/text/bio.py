@@ -24,10 +24,8 @@ def label_tokens(classes: list[str], offsets, spans) -> torch.Tensor:
         for t, (start, end) in enumerate(offsets.tolist()):
             if start == end == 0:
                 continue
-            # Overlap, not containment. A span whose characters cut a token
-            # — "USA" inside "USA-based" — used to land on no token at all
-            # and supervise nothing, which reads later as a class the model
-            # simply will not learn.
+            # Overlap, not containment: a span that cuts a token still
+            # supervises it. docs/adr/0036
             if start < span.end and end > span.start:
                 labels[t] = begin if first else inside
                 first = False
@@ -57,8 +55,8 @@ def decode_window(classes: list[str], text: str, logits: torch.Tensor, offsets) 
             current = {"labels": [class_name], "start": start, "end": end, "scores": [conf]}
             spans.append(current)
 
-    # Sorted by Spans on the way in, so confidences are ordered to match
-    # rather than left to line up by luck
+    # Sorted as Spans sorts on the way in, so confidences are ordered to
+    # match. docs/adr/0004
     found = sorted(spans, key=lambda s: (s["start"], s["end"]))
     return SpansPrediction(
         values=[
@@ -74,12 +72,9 @@ def decode_window(classes: list[str], text: str, logits: torch.Tensor, offsets) 
 def merge_windows(text: str, outputs: list) -> SpansPrediction:
     """Concatenate the windows' spans, minus what the overlap said twice.
 
-    Windows share an overlap, so an entity in the shared region is found by
-    both and must not be reported twice. It is the same entity when the
-    label and both offsets agree, and the higher confidence wins: a window
-    that saw the entity with more context is the one to believe. An entity
-    longer than the overlap is found in halves and reported as two, which
-    is a known and visible failure rather than a surprising one.
+    An entity in the shared region is the same entity when the label and
+    both offsets agree, and the higher confidence wins. See
+    ``docs/adr/0014``.
     """
     if len(outputs) == 1:
         return outputs[0]
@@ -89,8 +84,7 @@ def merge_windows(text: str, outputs: list) -> SpansPrediction:
             key = (span.label, span.start, span.end)
             best[key] = max(best.get(key, 0.0), confidence)
     order = sorted(best, key=lambda k: (k[1], k[2]))
-    # One construction, values and confidences together: Spans sorts
-    # itself into reading order and moves confidences with it.
+    # One construction, values and confidences together. docs/adr/0004
     return SpansPrediction(
         values=[
             Span(labels=[label], start=start, end=end, text=text[start:end])

@@ -19,17 +19,12 @@ class TextMulticlassClassifier(TextClassifier):
     version: ClassVar[str] = "1"
     problem_type: ClassVar[str] = "single_label_classification"
 
-    #: "any" means the union of what the windows asserted, which is not an
-    #: answer a single-label head is allowed to give.
+    #: "any" is the union, not an answer a single-label head may give.
+    #: docs/adr/0014
     AGGREGATIONS: ClassVar[tuple[str, ...]] = ("max", "mean")
 
     def requires_schema(self, schema) -> None:
-        """The mirror of the sigmoid head's refusal.
-
-        A softmax head names one class, so a label set expecting several
-        would be trained on the first of them and scored as though the rest
-        had been asked for.
-        """
+        """The mirror of the sigmoid head's refusal. See ``docs/adr/0014``."""
         if getattr(schema, "multiple", False) is True:
             raise ValueError(
                 "it is multi-choice, and this head names exactly one class "
@@ -38,10 +33,8 @@ class TextMulticlassClassifier(TextClassifier):
             )
 
     def _trainable(self, target) -> bool:
-        # "None of these" is a real answer and a common one, but it is not
-        # one this head can represent — the argmax always names something.
-        # Counted rather than encoded as class zero, which would teach the
-        # first class every time a reviewer found nothing.
+        # "None of these" is not one this head can represent: counted rather
+        # than encoded as class zero. docs/adr/0036
         return bool(getattr(target, "values", None))
 
     def _item(self, fields: dict, text: str, offsets, target) -> dict:
@@ -69,11 +62,8 @@ class TextMulticlassClassifier(TextClassifier):
     def _merge(self, text: str, outputs: list) -> ChoicesPrediction:
         """One class for the document, from one class per window.
 
-        Each window has already been decoded to its own winner, so a class
-        that came second everywhere never reaches here. Merging the
-        probability vectors would keep it, at the cost of holding every
-        window's logits for every document; the sigmoid head has the same
-        limit, so the two stay consistent.
+        Each window has already been decoded to its own winner. See
+        ``docs/adr/0014``.
         """
         if len(outputs) == 1:
             return outputs[0]

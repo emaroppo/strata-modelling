@@ -22,12 +22,7 @@ class TextClassifier(TransformerBase):
     aggregates_windows: ClassVar[bool] = True
 
     def requires_schema(self, schema) -> None:
-        """A sigmoid head cannot promise to name only one class.
-
-        Every class is scored independently, so this can assert two where
-        the label set permits one — and that lands as a pre-annotation a
-        reviewer has to undo, on a control that will not even display it.
-        """
+        """A sigmoid head cannot promise to name only one class. See ``docs/adr/0014``."""
         if getattr(schema, "multiple", True) is False:
             raise ValueError(
                 "it is single-choice, and this head scores every class "
@@ -46,9 +41,8 @@ class TextClassifier(TransformerBase):
         ).to(self.device)
 
     def _item(self, fields: dict, text: str, offsets, target) -> dict:
-        # Every window of a document carries the document's labels: the
-        # target is a statement about the whole thing, and there is no way
-        # to know which window earned it.
+        # Every window of a document carries the document's labels.
+        # docs/adr/0014
         labels = torch.zeros(len(self.classes))
         for name in target.values if target is not None else []:
             if name in self.classes:
@@ -59,14 +53,7 @@ class TextClassifier(TransformerBase):
         return threshold_choices(torch.sigmoid(logits.float()), self.classes)
 
     def _merge(self, text: str, outputs: list) -> ChoicesPrediction:
-        """Combine per-window answers under the declared strategy.
-
-        There is no right default here, which is why the constructor
-        refuses to guess: 'max' says a class is present if any window was
-        confident, 'mean' averages the evidence, 'any' takes the union of
-        what each window asserted. They disagree most on exactly the long
-        documents windowing exists for.
-        """
+        """Combine per-window answers under the declared strategy. See ``docs/adr/0014``."""
         if len(outputs) == 1:
             return outputs[0]
         scores = _by_class(outputs)
@@ -83,7 +70,7 @@ class TextClassifier(TransformerBase):
             keep = {max(combined, key=lambda n: combined[n]): max(combined.values())}
         order = sorted(keep, key=lambda n: keep[n], reverse=True)
         # Built in one construction: confidences are positional against
-        # values, so appending to a value already made reassigns them.
+        # values. docs/adr/0004
         return ChoicesPrediction(values=order, confidences=[round(keep[n], 4) for n in order])
 
 

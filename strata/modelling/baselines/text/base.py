@@ -16,14 +16,12 @@ class TransformerBase(Windowed, Model):
     """Shared training loop for the text heads."""
 
     #: Whether this head has to combine several windows into one answer for
-    #: the document. A tagger does not — spans from adjacent windows are
-    #: spans in the same document. A classifier does, and there is no
-    #: obvious right way, so it has to be told rather than defaulted.
+    #: the document. A classifier does, and has to be told how.
+    #: docs/adr/0014
     aggregates_windows: ClassVar[bool] = False
 
-    #: Which combinations this head can actually perform. Narrower for a
-    #: single-label head, where "the union of what the windows asserted" is
-    #: not an answer it is allowed to give.
+    #: Which combinations this head can perform. Narrower for a single-label
+    #: head. docs/adr/0014
     AGGREGATIONS: ClassVar[tuple[str, ...]] = ("max", "mean", "any")
 
     def __init__(
@@ -62,9 +60,8 @@ class TransformerBase(Windowed, Model):
                     f"{choices} — there is no right default."
                 )
             if window_aggregation is not None and window_aggregation not in self.AGGREGATIONS:
-                # Here rather than in `_merge`, which does not run until a
-                # document needs combining — a typo would otherwise survive
-                # a whole training run and fail on the first prediction.
+                # Here rather than in `_merge`, so a typo fails before a
+                # round. docs/adr/0014
                 raise ValueError(
                     f"{type(self).__name__} cannot combine windows by "
                     f"{window_aggregation!r}. It takes {choices}."
@@ -104,7 +101,7 @@ class TransformerBase(Windowed, Model):
     # -- shared --------------------------------------------------------------
 
     def _prepare(self, classes: list[str]) -> None:
-        """Keep the fine-tuned weights when the class list only grew."""
+        """Keep the fine-tuned weights when the class list only grew. See ``docs/adr/0005``."""
         if self._model is None:
             self.classes = list(classes)
             self._model = self._build_model(self._label_count())
@@ -180,8 +177,7 @@ class TransformerBase(Windowed, Model):
 
         metrics = {"loss": total_loss / max(seen, 1)}
         # What the training set lost on the way in, recorded on the run.
-        # A model that will not learn a class is otherwise indistinguishable
-        # from a class it was never actually taught.
+        # docs/adr/0036
         metrics.update({f"train_{k}": v for k, v in dataset.diagnostics.items()})
         if val:
             metrics.update(self._evaluate(val))
@@ -210,8 +206,8 @@ class TransformerBase(Windowed, Model):
             task = progress.add_task("predict", total=len(paths))
             for done, path in enumerate(paths, start=1):
                 text = read_text(path)
-                # One item per window, so a long document is answered whole
-                # rather than up to the encoder's limit and no further.
+                # One item per window, so a long document is answered whole.
+                # docs/adr/0014
                 per_window = []
                 for item in self._encode(text, None):
                     fields = {
