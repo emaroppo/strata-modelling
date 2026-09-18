@@ -7,6 +7,9 @@
 #
 #   .github/sibling-wheels.sh contracts common
 #
+# From GitHub unless STRATA_GIT names another base URL the repositories sit
+# under, a mirror say:  STRATA_GIT=http://git.example.lan:3000/you
+#
 set -euo pipefail
 : "${STRATA_GIT:=https://github.com/emaroppo}"
 mkdir -p dist .siblings
