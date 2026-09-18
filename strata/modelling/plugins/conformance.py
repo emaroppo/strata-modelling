@@ -29,7 +29,7 @@ from typing import ClassVar
 
 import pytest
 
-from strata.labels import (
+from strata.contracts import (
     BBoxSchema,
     BoxesPrediction,
     ChoicesPrediction,
@@ -61,7 +61,7 @@ class ModelContract:
     """Subclass this in a plugin's tests and supply the two fixtures."""
 
     #: What a model of each task emits. Not a plugin surface: a new label
-    #: type is added to ``strata.labels`` first. See ``docs/adr/0004``.
+    #: type is added to ``strata.contracts`` first. See ``docs/adr/0004``.
     PREDICTION_TYPES: ClassVar[dict[str, type]] = {
         "classification": ChoicesPrediction,
         "span": SpansPrediction,

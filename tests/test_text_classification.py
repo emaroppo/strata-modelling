@@ -15,7 +15,7 @@ import pytest
 torch = pytest.importorskip("torch", reason="needs the text extra")
 pytest.importorskip("transformers", reason="needs the text extra")
 
-from strata.labels import (  # noqa: E402
+from strata.contracts import (  # noqa: E402
     Choices,
     ChoicesPrediction,
     ClassificationSchema,

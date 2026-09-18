@@ -112,7 +112,7 @@ def _refused(tmp_path, catalog, request: RoundRequest, match: str) -> None:
 @pytest.fixture
 def fixture_dataset(tmp_path):
     """A materialised version, written the way the catalog would write it."""
-    from strata.labels import (
+    from strata.contracts import (
         MANIFEST_FORMAT,
         MANIFEST_NAME,
         Choices,
@@ -233,7 +233,7 @@ def test_a_manifest_from_before_formats_is_rebuilt(tmp_path, fixture_dataset, st
     """
     import json
 
-    from strata.labels import MANIFEST_FORMAT
+    from strata.contracts import MANIFEST_FORMAT
     from strata.modelling import RunStore
 
     catalog = FakeCatalog("d", 2, fixture_dataset)
@@ -475,7 +475,7 @@ def stub_predict(monkeypatch):
     run_prediction imports the handler when it runs, so patching the
     handler's own module is what takes effect.
     """
-    from strata.labels import ChoicesPrediction
+    from strata.contracts import ChoicesPrediction
     from strata.modelling.requests import ScoredPath
 
     seen = {}
@@ -629,7 +629,7 @@ def test_the_same_version_with_other_answers_is_refused(tmp_path, fixture_datase
 
 def _held(fixture_dataset, tmp_path):
     """The version as the caller's directory has it, for sending its split."""
-    from strata.labels import MANIFEST_NAME, Manifest
+    from strata.contracts import MANIFEST_NAME, Manifest
 
     where = tmp_path / "held"
     fixture_dataset(where)
@@ -637,7 +637,7 @@ def _held(fixture_dataset, tmp_path):
 
 
 def test_a_split_the_caller_drew_is_applied_to_a_copy(tmp_path, fixture_dataset, stub_training):
-    from strata.labels import MANIFEST_NAME, Manifest, order_digest, sides_string
+    from strata.contracts import MANIFEST_NAME, Manifest, order_digest, sides_string
     from strata.modelling import RunStore
     from strata.modelling.remote.wire import SplitSides
 
@@ -664,7 +664,7 @@ def test_a_split_the_caller_drew_is_applied_to_a_copy(tmp_path, fixture_dataset,
 def test_a_split_equal_to_the_versions_trains_from_the_version(
     tmp_path, fixture_dataset, stub_training
 ):
-    from strata.labels import order_digest, sides_string
+    from strata.contracts import order_digest, sides_string
     from strata.modelling import RunStore
     from strata.modelling.remote.wire import SplitSides
 
@@ -685,7 +685,7 @@ def test_a_split_equal_to_the_versions_trains_from_the_version(
 def test_a_split_over_other_samples_is_refused_before_training(
     tmp_path, fixture_dataset, stub_training
 ):
-    from strata.labels import sides_string
+    from strata.contracts import sides_string
     from strata.modelling import RunStore
     from strata.modelling.remote.checks import SplitMismatch
     from strata.modelling.remote.wire import SplitSides
@@ -704,7 +704,7 @@ def test_a_split_over_other_samples_is_refused_before_training(
 
 
 def test_a_split_of_the_wrong_length_is_refused(tmp_path, fixture_dataset, stub_training):
-    from strata.labels import order_digest
+    from strata.contracts import order_digest
     from strata.modelling import RunStore
     from strata.modelling.remote.checks import SplitMismatch
     from strata.modelling.remote.wire import SplitSides
@@ -772,7 +772,7 @@ def test_a_request_in_this_protocol_is_served(host):
 
 def test_a_mismatched_dataset_is_refused_before_the_round_is_accepted(host, tmp_path):
     from strata.catalog import EVERYTHING
-    from strata.labels import Choices, ClassificationSchema
+    from strata.contracts import Choices, ClassificationSchema
 
     client, catalog = host
     paths = []

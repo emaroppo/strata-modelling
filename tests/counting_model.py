@@ -14,7 +14,7 @@ COUNTING_MODEL = """
 import json
 from pathlib import Path
 
-from strata.labels import ChoicesPrediction
+from strata.contracts import ChoicesPrediction
 from strata.modelling import Model
 
 

@@ -3,7 +3,7 @@
 import torch
 from transformers import AutoModelForTokenClassification
 
-from strata.labels import SpansPrediction
+from strata.contracts import SpansPrediction
 
 from . import bio
 from .base import TransformerBase

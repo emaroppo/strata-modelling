@@ -14,7 +14,7 @@ pytest.importorskip("timm", reason="needs the image extra")
 
 from PIL import Image  # noqa: E402
 
-from strata.labels import Choices  # noqa: E402
+from strata.contracts import Choices  # noqa: E402
 from strata.modelling import Example  # noqa: E402
 from strata.modelling.baselines.image import (  # noqa: E402
     MulticlassClassifier,

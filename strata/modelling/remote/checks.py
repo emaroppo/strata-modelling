@@ -60,7 +60,7 @@ def check_split(split: SplitSides, manifest) -> list[str] | None:
     Positional, so the order is proven first: the count, and the digest of
     the checksums in manifest order. See ``docs/adr/0025``.
     """
-    from strata.labels import order_digest, sides_from_string, sides_string
+    from strata.contracts import order_digest, sides_from_string, sides_string
 
     if len(split.sides) != len(manifest.samples):
         raise SplitMismatch(

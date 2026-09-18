@@ -6,7 +6,7 @@ A plugin's tests look exactly like this: subclass, supply two fixtures.
 
 import pytest
 
-from strata.labels import Choices
+from strata.contracts import Choices
 from strata.modelling import Example
 from strata.modelling.plugins.conformance import ModelContract
 

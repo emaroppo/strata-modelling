@@ -13,7 +13,7 @@ uv add "strata-modelling[text]"          # torch, transformers: the text baselin
 uv add "strata-modelling[service]"       # the training service; pulls in strata-catalog
 ```
 
-Depends on `strata-labels` and `strata-common[migrations]`. May import
+Depends on `strata-contracts` and `strata-common[migrations]`. May import
 `strata-catalog` only from its service layer, and never `strata-labeller`
 or Label Studio. Asking for a baseline whose extra is not installed fails
 with a message naming the extra.
@@ -116,7 +116,7 @@ features as a role (0011), and a model refusing before a round (0014).
 ## Tests
 
 ```bash
-.github/sibling-wheels.sh labels common catalog   # the strata packages this one needs, until they are on an index
+.github/sibling-wheels.sh contracts common catalog   # the strata packages this one needs, until they are on an index
 uv sync --find-links dist --group dev --extra service   # --extra all for the frameworks
 uv run pytest
 ```

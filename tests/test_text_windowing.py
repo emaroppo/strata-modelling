@@ -18,7 +18,7 @@ pytest.importorskip("transformers", reason="needs the text extra")
 
 import torch
 
-from strata.labels import Span, Spans, SpansPrediction
+from strata.contracts import Span, Spans, SpansPrediction
 from strata.modelling.baselines.text import (
     TextClassifier,
     TextSpanTagger,
@@ -209,7 +209,7 @@ def test_the_classifier_aggregates_across_windows(tokenizer):
     model = TextClassifier(window=64, window_aggregation="max")
     model.classes = ["a", "b"]
     model._tokenizer = tokenizer
-    from strata.labels import ChoicesPrediction
+    from strata.contracts import ChoicesPrediction
 
     merged = model._merge(
         "irrelevant",

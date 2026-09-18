@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pydantic import Field
 
-from strata.labels import order_digest, sides_string
+from strata.contracts import order_digest, sides_string
 
 from .. import handlers
 from ..remote.checks import check_catalog

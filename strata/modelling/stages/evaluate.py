@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from strata.labels import Choices, feature_digest
+from strata.contracts import Choices, feature_digest
 
 from .. import handlers
 from ..remote.client import RemoteError
@@ -138,7 +138,7 @@ def _predictions(request: EvaluateRequest, context: Context, samples) -> tuple[d
             raise RemoteError(f"The host reports job {job['id']} failed: {finished.get('error')}")
         from pydantic import TypeAdapter
 
-        from strata.labels import AnyPrediction
+        from strata.contracts import AnyPrediction
 
         parse = TypeAdapter(AnyPrediction)
         found = {c: parse.validate_python(v) for c, v in finished["result"]["predictions"].items()}

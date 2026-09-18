@@ -1,6 +1,6 @@
 """Entity-level scoring.
 
-Pure functions over ``strata.labels`` values, so this needs no framework
+Pure functions over ``strata.contracts`` values, so this needs no framework
 and no tokenizer: the arithmetic is the thing under test, and the cases
 that matter are the ones where a plausible-looking implementation is
 wrong.
@@ -8,7 +8,7 @@ wrong.
 
 import pytest
 
-from strata.labels import Span
+from strata.contracts import Span
 
 # span_scores is pure, but it lives in the text baselines' module, which
 # needs the text extra to import at all

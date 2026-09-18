@@ -5,7 +5,7 @@ description = "Train and predict over a materialised dataset; model plugins, run
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "strata-labels>=0.1,<0.2",
+    "strata-contracts>=0.1,<0.2",
     # The migration plumbing and the entry-point resolver. Its migrations
     # extra is sqlalchemy and alembic, which this package needs anyway.
     "strata-common[migrations]>=0.1,<0.2",

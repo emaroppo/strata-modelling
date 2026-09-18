@@ -202,7 +202,7 @@ def _attach(store, run_id, path):
 
 
 def test_cached_predictions_come_across(stores):
-    from strata.labels import ChoicesPrediction
+    from strata.contracts import ChoicesPrediction
     from strata.modelling import PredictionCache
 
     source, target = stores

@@ -6,7 +6,7 @@ import re
 import pytest
 from counting_model import COUNTER, COUNTING_MODEL
 
-from strata.labels import MANIFEST_FORMAT
+from strata.contracts import MANIFEST_FORMAT
 from strata.modelling import (
     ModelError,
     PredictRequest,
@@ -444,7 +444,7 @@ def test_an_unresolvable_parent_reference_does_not_block(store, dataset_dir):
 
 def test_the_run_records_which_of_what_it_saw_nobody_checked(store, dataset_dir):
     """From the manifest's batch and reviewed, per side and per batch."""
-    from strata.labels import MANIFEST_NAME
+    from strata.contracts import MANIFEST_NAME
     from strata.modelling import Unchecked
 
     directory = dataset_dir(n_train=4, n_val=2)

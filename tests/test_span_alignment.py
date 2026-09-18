@@ -20,7 +20,7 @@ import pytest
 torch = pytest.importorskip("torch", reason="needs the text extra")
 pytest.importorskip("transformers", reason="needs the text extra")
 
-from strata.labels import Span, Spans, SpanSchema  # noqa: E402
+from strata.contracts import Span, Spans, SpanSchema  # noqa: E402
 from strata.modelling import Example  # noqa: E402
 from strata.modelling.baselines.text import TextSpanTagger  # noqa: E402
 

@@ -2,7 +2,7 @@
 
 import torch
 
-from strata.labels import Span, SpansPrediction
+from strata.contracts import Span, SpansPrediction
 
 
 def tag_ids(classes: list[str], class_name: str) -> tuple[int, int]:

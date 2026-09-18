@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy import update
 
-from strata.labels import MANIFEST_NAME, Manifest, ManifestFormatError
+from strata.contracts import MANIFEST_NAME, Manifest, ManifestFormatError
 
 from .model import Example, Model
 from .plugins.registry import ModelError, absolute, resolve

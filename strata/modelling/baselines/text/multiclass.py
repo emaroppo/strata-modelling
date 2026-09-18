@@ -4,7 +4,7 @@ from typing import ClassVar
 
 import torch
 
-from strata.labels import ChoicesPrediction
+from strata.contracts import ChoicesPrediction
 
 from .classifier import TextClassifier, _by_class
 

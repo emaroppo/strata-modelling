@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from counting_model import COUNTER, COUNTING_MODEL
 
-from strata.labels import MANIFEST_FORMAT, ChoicesPrediction
+from strata.contracts import MANIFEST_FORMAT, ChoicesPrediction
 from strata.modelling import RunStore
 
 

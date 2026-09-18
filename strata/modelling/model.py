@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
 
-from strata.labels import AnyPrediction, AnyValue
+from strata.contracts import AnyPrediction, AnyValue
 
 #: What a model reports as it trains: epochs done, epochs in total, and
 #: whatever it knows so far. The metrics are a snapshot rather than a
@@ -40,7 +40,7 @@ class Example:
     target: AnyValue
     #: What is already known about this sample and may be told to the
     #: model — a species, a coordinate. Empty for a project that declares
-    #: none. Plain values rather than :mod:`strata.labels` ones. See
+    #: none. Plain values rather than :mod:`strata.contracts` ones. See
     #: ``docs/adr/0011``.
     features: dict = field(default_factory=dict)
 
@@ -48,7 +48,7 @@ class Example:
 class Model(ABC):
     """Subclass this and implement the four methods below.
 
-    Targets and outputs are :mod:`strata.labels` values rather than any
+    Targets and outputs are :mod:`strata.contracts` values rather than any
     storage format, so a model neither knows nor cares that annotations came
     out of Label Studio.
     """

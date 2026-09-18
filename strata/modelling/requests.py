@@ -12,7 +12,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from strata.labels import AnyPrediction
+from strata.contracts import AnyPrediction
 
 
 class TrainRequest(BaseModel):

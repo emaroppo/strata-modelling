@@ -4,7 +4,7 @@ The model catalog: plugins, runs, metrics and checkpoints. A run names the
 dataset version and model version behind it, so a checkpoint resolves back
 to the exact samples and annotations that produced it.
 
-**May import:** ``labels``, an ML framework behind the optional extras, and
+**May import:** ``contracts``, an ML framework behind the optional extras, and
 ``catalog`` *only* from the service layer.
 
 **May not import:** ``strata.labeller``, or Label Studio.

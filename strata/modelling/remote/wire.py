@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field
 
-from strata.labels import AnyPrediction
+from strata.contracts import AnyPrediction
 
 from ..requests import Run
 

@@ -17,7 +17,7 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-from strata.labels import ChoicesPrediction
+from strata.contracts import ChoicesPrediction
 
 #: The console rich itself hands out, not one of our own. See ``docs/adr/0030``.
 console = get_console()

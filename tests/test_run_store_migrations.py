@@ -52,7 +52,7 @@ def test_cached_spans_written_with_one_label_are_rewritten(url, monkeypatch):
 
     from sqlalchemy import text
 
-    from strata.labels import SpansPrediction
+    from strata.contracts import SpansPrediction
 
     monkeypatch.setenv("STRATA_RUNS_URL", url)
     config = Config()

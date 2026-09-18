@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from strata.labels import AnyPrediction, feature_digest
+from strata.contracts import AnyPrediction, feature_digest
 
 from ..handlers import train as run_train
 from ..requests import PredictRequest, TrainRequest

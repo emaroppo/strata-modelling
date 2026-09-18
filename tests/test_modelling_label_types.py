@@ -1,13 +1,13 @@
 """Every label type through what modelling reads and returns.
 
-Checked against the examples ``strata.labels`` ships, so a type added there
+Checked against the examples ``strata.contracts`` ships, so a type added there
 is covered here on the next upgrade, and fails until modelling handles it.
 """
 
 import pytest
 
-from strata.labels import MANIFEST_FORMAT, MANIFEST_NAME, Manifest, ManifestSample
-from strata.labels.examples import EXAMPLES
+from strata.contracts import MANIFEST_FORMAT, MANIFEST_NAME, Manifest, ManifestSample
+from strata.contracts.examples import EXAMPLES
 from strata.modelling import PredictionCache, ScoredPath, examples
 
 each_type = pytest.mark.parametrize("example", EXAMPLES, ids=lambda e: e.name)

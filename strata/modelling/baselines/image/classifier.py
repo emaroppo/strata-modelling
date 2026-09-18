@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
-from strata.labels import AnyPrediction, ChoicesPrediction
+from strata.contracts import AnyPrediction, ChoicesPrediction
 
 from ...model import BatchReport, Example, Model
 from .._shared import pick_device, threshold_choices

@@ -13,7 +13,7 @@ from pydantic import TypeAdapter
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from strata.labels import AnyPrediction, Prediction
+from strata.contracts import AnyPrediction, Prediction
 
 from . import tables as t
 
@@ -56,7 +56,7 @@ class PredictionCache:
         """Whatever of ``checksums`` this run has already answered.
 
         ``digests`` says what the model was told about each sample, by
-        :func:`strata.labels.feature_digest`. A checksum whose features
+        :func:`strata.contracts.feature_digest`. A checksum whose features
         have changed since it was scored simply misses (``docs/adr/0006``).
 
         Omitted, every lookup uses the empty digest, which is what a

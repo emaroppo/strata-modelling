@@ -6,7 +6,7 @@ from typing import ClassVar
 import pytest
 from counting_model import COUNTER
 
-from strata.labels import MANIFEST_NAME
+from strata.contracts import MANIFEST_NAME
 from strata.modelling.remote.checks import CatalogMismatch
 from strata.modelling.remote.client import RemoteError
 from strata.modelling.stages import (
@@ -171,7 +171,7 @@ def test_what_is_sent_is_the_hosts_own_request(monkeypatch):
 
 
 def test_the_split_this_side_holds_is_sent_positionally(monkeypatch, dataset_dir):
-    from strata.labels import MANIFEST_NAME, Manifest, order_digest, sides_string
+    from strata.contracts import MANIFEST_NAME, Manifest, order_digest, sides_string
 
     sent = []
     monkeypatch.setattr(FakeHost, "submit", lambda self, r: sent.append(r) or {"id": "job"})

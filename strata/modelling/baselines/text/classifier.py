@@ -5,7 +5,7 @@ from typing import ClassVar
 import torch
 from transformers import AutoModelForSequenceClassification
 
-from strata.labels import ChoicesPrediction
+from strata.contracts import ChoicesPrediction
 
 from .._shared import threshold_choices
 from .base import TransformerBase

@@ -5,7 +5,7 @@
 # package there resolves to its sibling checkout. Goes away once the
 # packages are on an index.
 #
-#   .github/sibling-wheels.sh labels common
+#   .github/sibling-wheels.sh contracts common
 #
 set -euo pipefail
 : "${STRATA_GIT:=https://github.com/emaroppo}"

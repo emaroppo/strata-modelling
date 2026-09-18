@@ -18,7 +18,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from strata.labels import MANIFEST_NAME, Manifest
+from strata.contracts import MANIFEST_NAME, Manifest
 
 from ..remote.client import Trainer
 from ..store.runs import RunStore
