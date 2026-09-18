@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
 
-# Until the strata packages are on an index, each job first builds the
+# The strata packages are not on an index, so each job first builds the
 # wheels of the ones this package depends on from their repositories
 # (.github/sibling-wheels.sh) and resolves against dist/. --no-cache
 # throughout, because every package is 0.1.0 and uv would otherwise hand

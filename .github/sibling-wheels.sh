@@ -2,8 +2,7 @@
 # Wheels of the strata packages this one depends on, built from their
 # repositories at main into dist/, so that `uv sync --find-links dist`
 # resolves them. Inside the strata workspace this is not needed: every
-# package there resolves to its sibling checkout. Goes away once the
-# packages are on an index.
+# package there resolves to its sibling checkout.
 #
 #   .github/sibling-wheels.sh contracts common
 #

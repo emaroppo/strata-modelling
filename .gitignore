@@ -6,8 +6,8 @@ __pycache__/
 dist/
 # Sibling checkouts the CI step builds wheels from; see .github/sibling-wheels.sh
 .siblings/
-# Until the strata packages are on an index a lock here would pin wheels
-# built beside the checkout, so none is kept; the strata workspace keeps one.
+# The strata packages are not on an index, so a lock here would pin wheels
+# built beside the checkout; none is kept, and the strata workspace keeps one.
 uv.lock
 
 # A host's own: written by deploy/*/bootstrap-env.sh, never committed.

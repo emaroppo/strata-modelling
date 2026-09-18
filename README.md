@@ -6,11 +6,18 @@ prediction cache. The training core takes a directory and a manifest and
 nothing else, which is what lets it be tested against a fixture directory
 and run on a machine that has never heard of a catalog.
 
+Not on PyPI: it installs from its repository at a release tag. uv takes a
+git source only for a package named directly, so the strata packages
+beneath it are named beside it.
+
 ```bash
-uv add strata-modelling                  # the core, no framework
-uv add "strata-modelling[image]"         # torch, torchvision, timm: the image baselines
-uv add "strata-modelling[text]"          # torch, transformers: the text baselines
-uv add "strata-modelling[service]"       # the training service; pulls in strata-catalog
+g=git+https://github.com/emaroppo
+uv add "strata-modelling @ $g/strata-modelling@v0.1.0" \
+       "strata-contracts @ $g/strata-contracts@v0.1.0" \
+       "strata-common @ $g/strata-common@v0.1.0"         # the core, no framework
+uv add "strata-modelling[image] @ $g/strata-modelling@v0.1.0"   # torch, torchvision, timm: the image baselines
+uv add "strata-modelling[text] @ $g/strata-modelling@v0.1.0"   # torch, transformers: the text baselines
+uv add "strata-modelling[service] @ $g/strata-modelling@v0.1.0" "strata-catalog @ $g/strata-catalog@v0.1.0"   # the training service, which also needs strata-catalog
 ```
 
 Depends on `strata-contracts` and `strata-common[migrations]`. May import
@@ -116,7 +123,7 @@ features as a role (0011), and a model refusing before a round (0014).
 ## Tests
 
 ```bash
-.github/sibling-wheels.sh contracts common catalog   # the strata packages this one needs, until they are on an index
+.github/sibling-wheels.sh contracts common catalog   # the strata packages this one needs, from their repositories
 uv sync --find-links dist --group dev --extra service   # --extra all for the frameworks
 uv run pytest
 ```
