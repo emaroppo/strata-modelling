@@ -70,11 +70,20 @@ def decode_window(classes: list[str], text: str, logits: torch.Tensor, offsets) 
 
 
 def merge_windows(text: str, outputs: list) -> SpansPrediction:
-    """Concatenate the windows' spans, minus what the overlap said twice.
+    """The windows' spans, with what the overlap said twice resolved to once.
 
-    An entity in the shared region is the same entity when the label and
-    both offsets agree, and the higher confidence wins. See
-    ``docs/adr/0014``.
+    A document past the encoder's limit is read as several overlapping
+    windows, and an entity near a boundary is whole in one window and cut
+    in the next. Both used to survive, because only an exact match on
+    label and both offsets counted as the same entity: a name came back
+    as itself *and* as its own tail.
+
+    The label set this head accepts declares no overlapping regions
+    (``requires_schema``), so two spans of one label that overlap at all
+    cannot both be right. They are the same entity seen twice, and their
+    union is what it spans; the higher confidence carries. Spans of
+    different labels are left alone — which of them is right is not
+    something an overlap answers. See ``docs/adr/0014``.
     """
     if len(outputs) == 1:
         return outputs[0]
@@ -83,12 +92,30 @@ def merge_windows(text: str, outputs: list) -> SpansPrediction:
         for span, confidence in zip(output.values, output.confidences, strict=True):
             key = (span.label, span.start, span.end)
             best[key] = max(best.get(key, 0.0), confidence)
-    order = sorted(best, key=lambda k: (k[1], k[2]))
-    # One construction, values and confidences together. docs/adr/0004
+
+    # Per label, walk the spans in order and absorb each one that reaches
+    # back into the span before it.
+    merged: list[tuple[str, int, int, float]] = []
+    by_label: dict[str, list[tuple[int, int, float]]] = {}
+    for (label, start, end), confidence in best.items():
+        by_label.setdefault(label, []).append((start, end, confidence))
+    for label, spans in by_label.items():
+        run: tuple[int, int, float] | None = None
+        for start, end, confidence in sorted(spans):
+            if run is not None and start < run[1]:
+                run = (run[0], max(run[1], end), max(run[2], confidence))
+            else:
+                if run is not None:
+                    merged.append((label, *run))
+                run = (start, end, confidence)
+        if run is not None:
+            merged.append((label, *run))
+
+    # Sorted as Spans sorts on the way in, so confidences are ordered to
+    # match. docs/adr/0004
+    order = sorted(merged, key=lambda s: (s[1], s[2]))
     return SpansPrediction(
-        values=[
-            Span(labels=[label], start=start, end=end, text=text[start:end])
-            for label, start, end in order
-        ],
-        confidences=[round(best[key], 4) for key in order],
+        values=[Span(labels=[label], start=start, end=end, text=text[start:end])
+                for label, start, end, _ in order],
+        confidences=[round(confidence, 4) for _, _, _, confidence in order],
     )
