@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "strata-contracts>=0.1,<0.2",
+    # How a prediction is scored: the evaluate stage and the baselines' own
+    # validation numbers both come from it, so there is one implementation.
+    "strata-evaluation>=0.1,<0.2",
     # The migration plumbing and the entry-point resolver. Its migrations
     # extra is sqlalchemy and alembic, which this package needs anyway.
     "strata-common[migrations]>=0.1,<0.2",

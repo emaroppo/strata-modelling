@@ -6,6 +6,8 @@ from typing import Literal
 from pydantic import Field
 
 from strata.contracts import Choices, feature_digest
+from strata.evaluation import Tally
+from strata.evaluation.tasks import classify
 
 from .. import handlers
 from ..remote.client import RemoteError
@@ -67,33 +69,22 @@ def evaluate(request: EvaluateRequest, context: Context) -> EvaluateRecord:
         )
     predictions, where = _predictions(request, context, samples)
 
-    exact = 0
-    counts: dict[str, list[int]] = {}  # class -> [tp, fp, fn]
-    for sample in samples:
-        truth = set(_choices(sample.value).values)
-        guessed = set(_choices(predictions[sample.checksum]).values)
-        exact += truth == guessed
-        for name in truth | guessed:
-            tally = counts.setdefault(name, [0, 0, 0])
-            tally[0] += name in truth and name in guessed
-            tally[1] += name in guessed and name not in truth
-            tally[2] += name in truth and name not in guessed
-    tp = sum(t[0] for t in counts.values())
-    fp = sum(t[1] for t in counts.values())
-    fn = sum(t[2] for t in counts.values())
-    precision, recall, f1 = _prf(tp, fp, fn)
+    scores = classify.score(
+        [_choices(s.value) for s in samples],
+        [_choices(predictions[s.checksum]) for s in samples],
+    )
     return EvaluateRecord(
         run_id=request.run_id,
         side=request.side,
         where=where,
-        samples=len(samples),
+        samples=scores.samples,
         metrics={
-            "exact_match": exact / len(samples),
-            "precision": precision,
-            "recall": recall,
-            "f1": f1,
+            "exact_match": scores.exact_match,
+            "precision": scores.micro.precision,
+            "recall": scores.micro.recall,
+            "f1": scores.micro.f1,
         },
-        per_class={name: _class_score(tally) for name, tally in sorted(counts.items())},
+        per_class={name: _class_score(tally) for name, tally in scores.per_class.items()},
     )
 
 
@@ -104,16 +95,10 @@ def _choices(value: object) -> Choices:
     return value
 
 
-def _class_score(tally: list[int]) -> ClassScore:
-    precision, recall, f1 = _prf(*tally)
-    return ClassScore(precision=precision, recall=recall, f1=f1, support=tally[0] + tally[2])
-
-
-def _prf(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
-    precision = tp / (tp + fp) if tp + fp else 0.0
-    recall = tp / (tp + fn) if tp + fn else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-    return precision, recall, f1
+def _class_score(tally: Tally) -> ClassScore:
+    return ClassScore(
+        precision=tally.precision, recall=tally.recall, f1=tally.f1, support=tally.support
+    )
 
 
 def _predictions(request: EvaluateRequest, context: Context, samples) -> tuple[dict, Where]:
