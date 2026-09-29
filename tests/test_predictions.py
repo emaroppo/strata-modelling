@@ -114,7 +114,7 @@ def test_it_holds_whatever_a_model_produced(cache):
     """Choices, spans and boxes alike, read back as what they were.
 
     Being indifferent to the label format is the point of the project. A
-    cache pinned to one task type refuses every other, and a prediction
+    cache pinned to one label type refuses every other, and a prediction
     parsed as a plain value keeps the answer and loses how sure the model
     was of it.
     """

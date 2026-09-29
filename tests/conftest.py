@@ -65,7 +65,7 @@ def dataset_dir(tmp_path):
                     "version": version,
                     "label_set": "presence",
                     "label_schema": {
-                        "task": "classification",
+                        "label_type": "classification",
                         "classes": list(classes),
                         "multiple": True,
                     },

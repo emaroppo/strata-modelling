@@ -19,7 +19,7 @@ from strata.modelling import Model
 
 
 class CountingModel(Model):
-    task = "classification"
+    label_type = "classification"
     version = "1"
 
     def __init__(self, bias: float = 0.5):

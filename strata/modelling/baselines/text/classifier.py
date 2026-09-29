@@ -14,7 +14,7 @@ from .base import TransformerBase
 class TextClassifier(TransformerBase):
     """Multi-label document classification with a sigmoid head."""
 
-    task = "classification"
+    label_type = "classification"
     version = "1"
 
     #: How the head is trained: several labels may be on at once.

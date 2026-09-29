@@ -55,7 +55,7 @@ class ScoredPath(BaseModel):
     """
 
     path: Path
-    #: Whatever the model's task emits. See ``docs/adr/0004``.
+    #: Whatever the model's label type emits. See ``docs/adr/0004``.
     value: AnyPrediction
 
 

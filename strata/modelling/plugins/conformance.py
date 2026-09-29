@@ -60,7 +60,7 @@ def _class_names(values) -> set[str]:
 class ModelContract:
     """Subclass this in a plugin's tests and supply the two fixtures."""
 
-    #: What a model of each task emits. Not a plugin surface: a new label
+    #: What a model of each label type emits. Not a plugin surface: a new label
     #: type is added to ``strata.contracts`` first. See ``docs/adr/0004``.
     PREDICTION_TYPES: ClassVar[dict[str, type]] = {
         "classification": ChoicesPrediction,
@@ -99,7 +99,7 @@ class ModelContract:
                     seen.append(name)
         return seen or ["alpha"]
 
-    #: The plainest label set of each task — nothing declared on it, which
+    #: The plainest label set of each label type — nothing declared on it, which
     #: is what a label set means before anyone says otherwise.
     SCHEMA_TYPES: ClassVar[dict[str, type]] = {
         "classification": ClassificationSchema,
@@ -111,38 +111,38 @@ class ModelContract:
     def schema(self, model, classes):
         """A label set this model is meant to be trained on.
 
-        Defaults to the plainest one of its task. **Override it** where a
+        Defaults to the plainest one of its label type. **Override it** where a
         model exists precisely to serve a label set that declares something
         — a single-label classifier, a tagger for overlapping spans — since
         the default is then one it is right to refuse.
         """
-        task = type(model).task
-        if task not in self.SCHEMA_TYPES:
+        label_type = type(model).label_type
+        if label_type not in self.SCHEMA_TYPES:
             raise AssertionError(
-                f"{type(model).__name__} declares task {task!r}, which names "
-                f"no schema type. Known: {sorted(self.SCHEMA_TYPES)}."
+                f"{type(model).__name__} declares label type {label_type!r}, which "
+                f"names no schema type. Known: {sorted(self.SCHEMA_TYPES)}."
             )
-        return self.SCHEMA_TYPES[task](classes=list(classes))
+        return self.SCHEMA_TYPES[label_type](classes=list(classes))
 
     @pytest.fixture
     def expected_prediction(self, model) -> type:
-        """What this model's task says it must emit."""
-        task = type(model).task
-        if task not in self.PREDICTION_TYPES:
+        """What this model's label type says it must emit."""
+        label_type = type(model).label_type
+        if label_type not in self.PREDICTION_TYPES:
             raise AssertionError(
-                f"{type(model).__name__} declares task {task!r}, which names "
-                f"no prediction type. Known: {sorted(self.PREDICTION_TYPES)}."
+                f"{type(model).__name__} declares label type {label_type!r}, which "
+                f"names no prediction type. Known: {sorted(self.PREDICTION_TYPES)}."
             )
-        return self.PREDICTION_TYPES[task]
+        return self.PREDICTION_TYPES[label_type]
 
     # -- declarations ---------------------------------------------------
 
     def test_it_is_a_model(self, model):
         assert isinstance(model, Model)
 
-    def test_it_declares_a_task(self, model):
+    def test_it_declares_a_label_type(self, model):
         # Checked before training. docs/adr/0014
-        assert isinstance(type(model).task, str) and type(model).task
+        assert isinstance(type(model).label_type, str) and type(model).label_type
 
     def test_it_declares_a_version(self, model):
         # A run records this, and warm-starting across a change is refused. docs/adr/0005
@@ -153,8 +153,8 @@ class ModelContract:
 
         ``requires_schema`` is how a model declines a shape it cannot
         represent — overlapping spans, a region with two labels, several
-        classes at once. Declining every label set of its own task is the
-        thing this catches, and the task check could not.
+        classes at once. Declining every label set of its own label type is
+        the thing this catches, and the label type check could not.
         """
         model.requires_schema(schema)
 

@@ -20,7 +20,7 @@ class TextSpanTagger(TransformerBase):
     exact.
     """
 
-    task = "span"
+    label_type = "span"
     version = "1"
 
     def _label_count(self) -> int:

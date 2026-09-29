@@ -55,8 +55,27 @@ def resolve(name: str, root: Path | None = None) -> type[Model]:
     ``root`` anchors a ``file.py:Class`` reference, so a project-local model
     is found relative to the work rather than the current directory.
     """
-    if ":" not in name:
-        return _from_registry(name)
+    found = _from_registry(name) if ":" not in name else _from_reference(name, root)
+    _refuse_the_old_name(found, name)
+    return found
+
+
+def _refuse_the_old_name(model_cls: type, name: str) -> None:
+    """Refuse a model that still says ``task`` for its label type.
+
+    Otherwise it inherits the default label type and is refused later as a
+    mismatch, or worse, accepted as a classifier. See ``docs/adr/0041``.
+    """
+    own = [c for c in model_cls.__mro__ if c is not Model and issubclass(c, Model)]
+    if any("task" in vars(c) for c in own) and not any("label_type" in vars(c) for c in own):
+        raise ModelError(
+            f"Model {name!r} declares `task`, which is now `label_type`: the "
+            f"label type it learns from, classification, span or bbox. Rename "
+            f"the attribute."
+        )
+
+
+def _from_reference(name: str, root: Path | None) -> type[Model]:
     target, class_name = name.rsplit(":", 1)
     module = (
         _module_from_file(target, root)

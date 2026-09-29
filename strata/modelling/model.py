@@ -53,9 +53,10 @@ class Model(ABC):
     out of Label Studio.
     """
 
-    #: Which task this model handles. Checked before training. See
-    #: ``docs/adr/0014``.
-    task: ClassVar[str] = "classification"
+    #: Which label type this model learns from and emits: classification,
+    #: span or bbox. Checked before training. See ``docs/adr/0014`` and
+    #: ``docs/adr/0041``.
+    label_type: ClassVar[str] = "classification"
 
     #: Classes this model emits that a caller would not otherwise declare.
     #: The label set has to declare them, and training refuses if it does
@@ -76,7 +77,7 @@ class Model(ABC):
     def requires_schema(self, schema) -> None:
         """Refuse a label set this model cannot learn from. Raise, or return.
 
-        For a label set of the right task whose *shape* the model cannot
+        For a label set of the right label type whose *shape* the model cannot
         represent. Raise ``ValueError`` naming what would be needed;
         training refuses before the round. The default accepts anything.
         See ``docs/adr/0014``.

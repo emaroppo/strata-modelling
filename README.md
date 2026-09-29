@@ -33,7 +33,7 @@ or Label Studio.
 
 ```python
 class MyModel(Model):
-    task = "classification"
+    label_type = "classification"
 
     def finetune(self, train, classes, val=None, on_epoch=None): ...
     def predict(self, paths, on_batch=None, *, features=None): ...
@@ -60,7 +60,7 @@ is refused over HTTP.
 
 ### The baselines that ship
 
-| `ref` | task | media | notes |
+| `ref` | label type | media | notes |
 |---|---|---|---|
 | `multilabel` | classification | image | several classes at once |
 | `multiclass` | classification | image | mutually exclusive |

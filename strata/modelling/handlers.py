@@ -28,10 +28,10 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
     schema = manifest.label_schema
     model_cls = resolve(request.model, root=request.dataset_dir)
 
-    if model_cls.task != schema.task:
+    if model_cls.label_type != schema.label_type:
         raise TrainingError(
-            f"Model {request.model!r} handles '{model_cls.task}' but this label "
-            f"set is '{schema.task}'"
+            f"Model {request.model!r} handles '{model_cls.label_type}' but this label "
+            f"set is '{schema.label_type}'"
         )
 
     # Built before its requirements are read. docs/adr/0014

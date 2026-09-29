@@ -54,12 +54,12 @@ class EvaluateRecord(Strict):
 
 def evaluate(request: EvaluateRequest, context: Context) -> EvaluateRecord:
     manifest = _manifest(request.dataset_dir)
-    task = manifest.label_schema.task
-    if task != "classification":
+    label_type = manifest.label_schema.label_type
+    if label_type != "classification":
         # Refused rather than approximated. docs/adr/0035
         raise StageError(
             f"evaluate scores classification only for now, and this label set is "
-            f"{task!r}. Span-level and box-level scoring are still to come."
+            f"{label_type!r}. Span-level and box-level scoring are still to come."
         )
     samples = [s for s in manifest.samples if s.split == request.side and s.value is not None]
     if not samples:

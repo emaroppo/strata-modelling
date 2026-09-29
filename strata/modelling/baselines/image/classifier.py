@@ -24,7 +24,7 @@ class MultiLabelClassifier(Model):
     and presence variants override the task hooks below and share the rest.
     """
 
-    task = "classification"
+    label_type = "classification"
     version = "1"
 
     IMG_SIZE = 288

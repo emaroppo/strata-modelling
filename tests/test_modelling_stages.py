@@ -298,7 +298,7 @@ def test_only_classification_is_scored_for_now(store, dataset_dir):
     record = train(_train(directory, fresh=True), Context(store))
     path = directory / MANIFEST_NAME
     payload = json.loads(path.read_text())
-    payload["label_schema"] = {"task": "span", "classes": ["name"]}
+    payload["label_schema"] = {"label_type": "span", "classes": ["name"]}
     path.write_text(json.dumps(payload))
     with pytest.raises(StageError, match="classification only"):
         evaluate(EvaluateRequest(run_id=record.run_id, dataset_dir=directory), Context(store))

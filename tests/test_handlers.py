@@ -107,7 +107,7 @@ def test_a_manifest_written_without_a_catalog_trains(store, tmp_path):
                 "format": MANIFEST_FORMAT,
                 "dataset": "outside",
                 "label_set": "presence",
-                "label_schema": {"task": "classification", "classes": ["cat", "dog"]},
+                "label_schema": {"label_type": "classification", "classes": ["cat", "dog"]},
                 "samples": samples,
             }
         )
@@ -168,9 +168,9 @@ def test_a_manifest_this_release_cannot_read_is_refused(store, dataset_dir):
     """The core holds a directory, not a catalog: it cannot fetch a fresh copy, so it says why."""
     root = dataset_dir()
     manifest = json.loads((root / "manifest.json").read_text())
-    manifest["format"] = 2
+    manifest["format"] = MANIFEST_FORMAT + 1
     (root / "manifest.json").write_text(json.dumps(manifest))
-    with pytest.raises(TrainingError, match="format 2"):
+    with pytest.raises(TrainingError, match=f"format {MANIFEST_FORMAT + 1}"):
         train(TrainRequest(dataset_dir=root, model=COUNTER), store)
 
 
@@ -179,21 +179,23 @@ def test_a_dataset_with_no_training_samples_is_an_error(store, dataset_dir):
         train(TrainRequest(dataset_dir=dataset_dir(n_train=0, n_val=2), model=COUNTER), store)
 
 
-def test_a_model_for_another_task_is_refused(store, dataset_dir):
+def test_a_model_for_another_label_type_is_refused(store, dataset_dir):
     root = dataset_dir()
     manifest = json.loads((root / "manifest.json").read_text())
-    manifest["label_schema"]["task"] = "classification"
+    manifest["label_schema"]["label_type"] = "classification"
     (root / "counter.py").write_text(
-        (root / "counter.py").read_text().replace('task = "classification"', 'task = "span"')
+        (root / "counter.py")
+        .read_text()
+        .replace('label_type = "classification"', 'label_type = "span"')
     )
     with pytest.raises(TrainingError, match="handles 'span'"):
         train(TrainRequest(dataset_dir=root, model=COUNTER), store)
 
 
 def test_a_label_set_shaped_wrong_for_the_model_is_refused(store, dataset_dir):
-    """The finer check the task check cannot make.
+    """The finer check the label type check cannot make.
 
-    Right task, wrong shape: the model handles spans, and this label set
+    Right label type, wrong shape: the model handles spans, and this label set
     declares overlapping ones. Caught here it is a refusal; caught nowhere,
     the model trains on a projection of the data and reports a number for
     the projection.
@@ -201,7 +203,7 @@ def test_a_label_set_shaped_wrong_for_the_model_is_refused(store, dataset_dir):
     root = dataset_dir()
     manifest = json.loads((root / "manifest.json").read_text())
     manifest["label_schema"] = {
-        "task": "span",
+        "label_type": "span",
         "classes": ["cat", "dog"],
         "overlapping": True,
     }
@@ -210,7 +212,9 @@ def test_a_label_set_shaped_wrong_for_the_model_is_refused(store, dataset_dir):
             sample["value"] = {"kind": "spans", "values": []}
     (root / "manifest.json").write_text(json.dumps(manifest))
     (root / "counter.py").write_text(
-        (root / "counter.py").read_text().replace('task = "classification"', 'task = "span"')
+        (root / "counter.py")
+        .read_text()
+        .replace('label_type = "classification"', 'label_type = "span"')
         + REFUSES_OVERLAPS
     )
     with pytest.raises(TrainingError, match="cannot be trained on this label set"):

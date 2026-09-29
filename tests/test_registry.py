@@ -121,3 +121,22 @@ def test_two_projects_with_the_same_filename_do_not_collide(tmp_path):
     second = resolve("model.py:ModelB", root=tmp_path / "b")
     assert first is not second
     assert (first.__name__, second.__name__) == ("ModelA", "ModelB")
+
+
+def test_a_model_still_declaring_task_is_refused_by_name(tmp_path):
+    """`task` became `label_type`; a plugin that missed it is told so (docs/adr/0041).
+
+    Otherwise it inherits the default label type and is refused later as a
+    mismatch it cannot explain, or accepted as a classifier.
+    """
+    (tmp_path / "old.py").write_text(
+        "from strata.modelling import Model\n\n\n"
+        "class Old(Model):\n"
+        '    task = "span"\n\n'
+        "    def finetune(self, train, classes, val=None, on_epoch=None): return {}\n"
+        "    def predict(self, paths, on_batch=None, *, features=None): return []\n"
+        "    def save(self, path): pass\n"
+        "    def load(self, path): pass\n"
+    )
+    with pytest.raises(ModelError, match="`task`, which is now `label_type`"):
+        resolve("old.py:Old", root=tmp_path)
