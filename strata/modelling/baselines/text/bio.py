@@ -115,7 +115,9 @@ def merge_windows(text: str, outputs: list) -> SpansPrediction:
     # match. docs/adr/0004
     order = sorted(merged, key=lambda s: (s[1], s[2]))
     return SpansPrediction(
-        values=[Span(labels=[label], start=start, end=end, text=text[start:end])
-                for label, start, end, _ in order],
+        values=[
+            Span(labels=[label], start=start, end=end, text=text[start:end])
+            for label, start, end, _ in order
+        ],
         confidences=[round(confidence, 4) for _, _, _, confidence in order],
     )
