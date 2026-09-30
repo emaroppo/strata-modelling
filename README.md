@@ -109,9 +109,12 @@ from the `config.toml` that `STRATA_CONFIG` names.
 Two stage functions in `strata.modelling.stages`. `train` trains from a
 materialised directory here, or on the host from the dataset's identity,
 and returns the same record either way. `evaluate` scores one side of a
-directory with a recorded run through one implementation: exact match,
-micro precision, recall and F1, and a per-class table. Classification only
-so far.
+directory with a recorded run by the tasks it is asked for, strata-evaluation's:
+`classify` for a classification label set and `entities` for spans when none
+is named, `mask` for anonymisation, or a project's own `file.py:Class`. Each
+task's score is recorded under its name with the identity of the code that
+produced it. Predictions come from the cache or the modelling host; the
+scoring always runs here. Box-level scoring is still to come.
 
 ## Decisions
 

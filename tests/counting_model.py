@@ -51,3 +51,43 @@ class CountingModel(Model):
         self.bias = payload["bias"]
         self.seen["warm_started"] = True
 """
+
+
+SPAN_COUNTER = "span_counter.py:SpanCountingModel"
+
+#: A span model with nothing behind it, which splits the name in every
+#: document it is shown into its two words: the fragmentation the mask task
+#: exists to count.
+SPAN_MODEL = """
+import json
+from pathlib import Path
+
+from strata.contracts import Span, SpansPrediction
+from strata.modelling import Model
+
+
+class SpanCountingModel(Model):
+    label_type = "span"
+    version = "1"
+
+    def finetune(self, train, classes, val=None, on_epoch=None):
+        return {"n_train": float(len(train))}
+
+    def predict(self, paths, on_batch=None, *, features=None):
+        return [
+            SpansPrediction(
+                values=[
+                    Span(labels=["PER"], start=5, end=9, text="John"),
+                    Span(labels=["PER"], start=10, end=15, text="Smith"),
+                ],
+                confidences=[0.9, 0.8],
+            )
+            for _ in paths
+        ]
+
+    def save(self, path):
+        Path(path).write_text(json.dumps({}))
+
+    def load(self, path):
+        pass
+"""

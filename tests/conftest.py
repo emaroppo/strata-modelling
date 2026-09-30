@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 import pytest
-from counting_model import COUNTER, COUNTING_MODEL
+from counting_model import COUNTER, COUNTING_MODEL, SPAN_COUNTER, SPAN_MODEL
 
 from strata.contracts import MANIFEST_FORMAT, ChoicesPrediction
 from strata.modelling import RunStore
@@ -19,6 +19,11 @@ from strata.modelling import RunStore
 @pytest.fixture
 def store(tmp_path) -> RunStore:
     return RunStore.local(tmp_path / "runs")
+
+
+#: Every span dataset's document, and the entity marked in it.
+DOCUMENT = "Dear John Smith, hi"
+NAME_SPAN = {"labels": ["PER"], "start": 5, "end": 15, "text": "John Smith"}
 
 
 @pytest.fixture
@@ -38,23 +43,35 @@ def dataset_dir(tmp_path):
         name: str = "d",
         version: int = 1,
         sides_from_version: int | None = None,
+        spans: bool = False,
     ) -> Path:
+        """``spans`` makes it a span label set over text documents, each
+        "Dear John Smith, hi" with the name marked, and the span counting
+        model beside it."""
         root = tmp_path / f"{name}-v{version}"
         (root / "files").mkdir(parents=True, exist_ok=True)
         (root / COUNTER.split(":")[0]).write_text(COUNTING_MODEL)
+        (root / SPAN_COUNTER.split(":")[0]).write_text(SPAN_MODEL)
+        if spans:
+            classes = ("PER", "ORG")
 
         samples = []
         for i in range(n_train + n_val + n_skipped):
-            relative = f"files/img{i:03d}.jpg"
-            (root / relative).write_bytes(f"image {i}".encode())
+            relative = f"files/doc{i:03d}.txt" if spans else f"files/img{i:03d}.jpg"
+            (root / relative).write_bytes(DOCUMENT.encode() if spans else f"image {i}".encode())
             skipped = i >= n_train + n_val
+            answer = (
+                {"kind": "spans", "values": [NAME_SPAN]}
+                if spans
+                else {"kind": "choices", "values": [classes[0]]}
+            )
             samples.append(
                 {
                     "id": i + 1,
                     "checksum": f"{i:064d}",
                     "path": relative,
                     "split": "val" if n_train <= i < n_train + n_val else "train",
-                    "value": None if skipped else {"kind": "choices", "values": [classes[0]]},
+                    "value": None if skipped else answer,
                 }
             )
         (root / "manifest.json").write_text(
@@ -64,11 +81,15 @@ def dataset_dir(tmp_path):
                     "dataset": name,
                     "version": version,
                     "label_set": "presence",
-                    "label_schema": {
-                        "label_type": "classification",
-                        "classes": list(classes),
-                        "multiple": True,
-                    },
+                    "label_schema": (
+                        {"label_type": "span", "classes": list(classes)}
+                        if spans
+                        else {
+                            "label_type": "classification",
+                            "classes": list(classes),
+                            "multiple": True,
+                        }
+                    ),
                     "val_ratio": 0.2,
                     "val_ratio_achieved": n_val / max(n_train + n_val, 1),
                     "sides_from_version": sides_from_version,

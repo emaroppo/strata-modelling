@@ -4,7 +4,7 @@ import json
 from typing import ClassVar
 
 import pytest
-from counting_model import COUNTER
+from counting_model import COUNTER, SPAN_COUNTER
 
 from strata.contracts import MANIFEST_NAME
 from strata.modelling.remote.checks import CatalogMismatch
@@ -15,6 +15,7 @@ from strata.modelling.stages import (
     EvaluateRequest,
     Host,
     StageError,
+    TaskRef,
     TrainStageRequest,
     evaluate,
     train,
@@ -292,15 +293,107 @@ def test_an_empty_side_is_refused(store, dataset_dir):
         evaluate(EvaluateRequest(run_id=record.run_id, dataset_dir=directory), Context(store))
 
 
-def test_only_classification_is_scored_for_now(store, dataset_dir):
+def _span_run(store, dataset_dir, held=3):
+    directory = dataset_dir(n_train=8, n_val=2, spans=True)
+    _hold_out(directory, held)
+    record = train(_train(directory, model=SPAN_COUNTER, fresh=True), Context(store))
+    return directory, record.run_id
+
+
+def test_a_span_label_set_is_scored_by_the_tasks_asked(store, dataset_dir):
+    directory, run_id = _span_run(store, dataset_dir)
+    scored = evaluate(
+        EvaluateRequest(
+            run_id=run_id,
+            dataset_dir=directory,
+            tasks=[TaskRef(ref="entities"), TaskRef(ref="mask")],
+        ),
+        Context(store),
+    )
+    assert set(scored.scores) == {"entities", "mask"}
+    # "John Smith" came back as "John" and "Smith" in every held-out document
+    assert scored.scores["entities"].metrics["f1"] == 0.0
+    assert scored.scores["entities"].metrics["partial_f1"] > 0.0
+    mask = scored.scores["mask"]
+    assert mask.metrics["fragmented"] == 1.0
+    assert mask.metrics["leaked"] == 0.0
+    assert mask.counts["fragmented.of"] == 3
+    assert mask.identity.name == "mask" and mask.identity.source.startswith("strata-evaluation")
+    # Nothing classified, so nothing where the old records kept it
+    assert scored.metrics == {} and scored.per_class == {}
+
+
+def test_a_span_label_set_with_no_task_named_is_scored_by_entities(store, dataset_dir):
+    directory, run_id = _span_run(store, dataset_dir)
+    scored = evaluate(EvaluateRequest(run_id=run_id, dataset_dir=directory), Context(store))
+    assert set(scored.scores) == {"entities"}
+
+
+def test_a_classification_run_keeps_the_numbers_older_records_read(store, dataset_dir):
+    directory = dataset_dir(n_train=8, n_val=2)
+    _hold_out(directory, 3)
+    record = train(_train(directory, fresh=True), Context(store))
+    scored = evaluate(EvaluateRequest(run_id=record.run_id, dataset_dir=directory), Context(store))
+    assert scored.metrics == dict(scored.scores["classify"].metrics)
+    assert scored.per_class["cat"].support == 3
+
+
+def test_a_task_for_another_label_type_is_refused(store, dataset_dir):
+    directory, run_id = _span_run(store, dataset_dir)
+    request = EvaluateRequest(run_id=run_id, dataset_dir=directory, tasks=[TaskRef(ref="classify")])
+    with pytest.raises(StageError, match="reads classification label sets"):
+        evaluate(request, Context(store))
+
+
+def test_an_unknown_task_or_class_is_refused_before_predicting(store, dataset_dir, monkeypatch):
+    directory, run_id = _span_run(store, dataset_dir)
+    import strata.modelling.handlers as handlers
+
+    monkeypatch.setattr(handlers, "predict", lambda *a, **k: pytest.fail("predicted"))
+    for ref, match in [
+        (TaskRef(ref="entitys"), "No task named 'entitys'"),
+        (TaskRef(ref="mask", params={"classes": ["LOC"]}), "asked for LOC"),
+        (TaskRef(ref="mask", params={"failures": ["fragmentd"]}), "No failure mode"),
+    ]:
+        request = EvaluateRequest(run_id=run_id, dataset_dir=directory, tasks=[ref])
+        with pytest.raises(StageError, match=match):
+            evaluate(request, Context(store))
+
+
+def test_code_changed_since_the_request_was_checked_is_refused(store, dataset_dir):
+    """Scored under the old identity, a number would say it came from code that did not run."""
+    from strata.evaluation.identity import Identity
+
+    directory, run_id = _span_run(store, dataset_dir)
+    stale = Identity(name="entities", version="0", source="strata-evaluation==0.0.0")
+    request = EvaluateRequest(
+        run_id=run_id, dataset_dir=directory, tasks=[TaskRef(ref="entities", identities=[stale])]
+    )
+    with pytest.raises(StageError, match="the code changed in between"):
+        evaluate(request, Context(store))
+
+
+def test_an_unreadable_document_is_refused_rather_than_scored_as_empty(store, dataset_dir):
+    directory, run_id = _span_run(store, dataset_dir)
+    payload = json.loads((directory / MANIFEST_NAME).read_text())
+    held = next(s for s in payload["samples"] if s["split"] == "holdout")
+    # Predicted first, so the cache holds it; then the file goes
+    request = EvaluateRequest(run_id=run_id, dataset_dir=directory, tasks=[TaskRef(ref="mask")])
+    evaluate(request, Context(store))
+    (directory / held["path"]).unlink()
+    with pytest.raises(StageError, match="Cannot read"):
+        evaluate(request, Context(store))
+
+
+def test_a_label_type_with_no_default_task_is_refused(store, dataset_dir):
     directory = dataset_dir(n_train=8, n_val=2)
     _hold_out(directory, 2)
     record = train(_train(directory, fresh=True), Context(store))
     path = directory / MANIFEST_NAME
     payload = json.loads(path.read_text())
-    payload["label_schema"] = {"label_type": "span", "classes": ["name"]}
+    payload["label_schema"] = {"label_type": "bbox", "classes": ["cat"]}
     path.write_text(json.dumps(payload))
-    with pytest.raises(StageError, match="classification only"):
+    with pytest.raises(StageError, match="No task scores a bbox label set by default"):
         evaluate(EvaluateRequest(run_id=record.run_id, dataset_dir=directory), Context(store))
 
 
@@ -326,3 +419,51 @@ def test_evaluate_asks_the_host_when_there_is_one(dataset_dir):
     )
     assert scored.where == "remote" and scored.samples == 2
     assert scored.metrics["exact_match"] == 1.0
+
+
+def test_a_projects_own_failure_mode_scores_with_a_modelling_host(dataset_dir, tmp_path):
+    """The host predicts; the scoring runs here, so a file it cannot see still counts."""
+    directory = dataset_dir(n_train=8, n_val=2, spans=True)
+    _hold_out(directory, 2)
+    payload = json.loads((directory / MANIFEST_NAME).read_text())
+    held = [s["checksum"] for s in payload["samples"] if s["split"] == "holdout"]
+    (tmp_path / "failures.py").write_text(
+        "from strata.evaluation.failures import FailureMode\n\n\n"
+        "class ShortPiece(FailureMode):\n"
+        '    name = "short_piece"\n'
+        '    version = "1"\n'
+        '    side = "prediction"\n'
+        '    description = "a prediction of four characters or fewer"\n'
+        '    example = ("[John Smith|PER]", "[John|PER] Smith")\n'
+        "    isolated = False\n\n"
+        "    def detect(self, a):\n"
+        "        return {p for p, q in enumerate(a.predicted) if len(q.chars) <= 4}\n"
+    )
+
+    class Spans(FakeHost):
+        def predict(self, request):
+            return {"id": "job-3"}
+
+        def follow(self, job_id, on_state=None):
+            split = {
+                "kind": "spans",
+                "values": [
+                    {"labels": ["PER"], "start": 5, "end": 9, "text": "John"},
+                    {"labels": ["PER"], "start": 10, "end": 15, "text": "Smith"},
+                ],
+                "confidences": [0.9, 0.8],
+            }
+            answers = dict.fromkeys(held, split)
+            return {"state": "done", "result": {"predictions": answers, "unknown": []}}
+
+    mode = f"{tmp_path / 'failures.py'}:ShortPiece"
+    scored = evaluate(
+        EvaluateRequest(
+            run_id="r-gpu",
+            dataset_dir=directory,
+            tasks=[TaskRef(ref="mask", params={"failures": ["fragmented", mode]})],
+        ),
+        Context(store=None, host=Host("http://gpu", "t"), client=Spans),
+    )
+    assert scored.where == "remote"
+    assert scored.scores["mask"].metrics == {"fragmented": 1.0, "short_piece": 0.5, "clean": 0.0}
