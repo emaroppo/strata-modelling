@@ -11,7 +11,15 @@ nothing here names a catalog.
 from strata.common.stages import Stage
 
 from ._context import DATASET_DIR, METRICS, RUN, Context, DatasetIdentity, Host, StageError
-from .evaluate import DEFAULT_TASKS, ClassScore, EvaluateRecord, EvaluateRequest, TaskRef, evaluate
+from .evaluate import (
+    DEFAULT_TASKS,
+    ClassScore,
+    EvaluateRecord,
+    EvaluateRequest,
+    TaskRef,
+    evaluate,
+    resolved,
+)
 from .train import TrainRecord, TrainStageRequest, train
 
 STAGES = (
@@ -39,5 +47,6 @@ __all__ = [
     "TrainRecord",
     "TrainStageRequest",
     "evaluate",
+    "resolved",
     "train",
 ]
