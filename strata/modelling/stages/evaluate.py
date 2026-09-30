@@ -4,7 +4,7 @@ A task is strata-evaluation's: found by name or by a project's own file, it
 reads one label type and asks one question of it, and what it records
 carries the identity of the code that produced it. Predictions come from the
 cache or the modelling host; the scoring always runs here. See
-``docs/adr/0035`` and ``docs/adr/0043``.
+``docs/adr/0035`` and ``docs/adr/0042``.
 """
 
 from pathlib import Path
@@ -42,7 +42,7 @@ class TaskRef(Strict):
     ``identities`` is the task's own identity followed by those of the plugins
     its parameters name, as resolved when the request was made. Given, it is
     held to: code that changed between then and now is refused rather than
-    scored under the old identity. See ``docs/adr/0043``.
+    scored under the old identity. See ``docs/adr/0042``.
     """
 
     ref: str

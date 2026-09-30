@@ -25,7 +25,7 @@ from .train import TrainRecord, TrainStageRequest, train
 STAGES = (
     Stage("train", "1", (DATASET_DIR,), RUN, train),
     # 2: exact_match rather than accuracy, and per-class scores. docs/adr/0035
-    # 3: the tasks asked, by strata-evaluation, each with its identity. docs/adr/0043
+    # 3: the tasks asked, by strata-evaluation, each with its identity. docs/adr/0042
     Stage("evaluate", "3", (DATASET_DIR, RUN), METRICS, evaluate),
 )
 
