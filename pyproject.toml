@@ -50,10 +50,11 @@ test = ["pytest>=8.0"]
 # Only the service layer materialises; the training core takes a directory
 # and a manifest, so it stays testable with neither a catalog nor a database.
 service = [
-    # With s3: a host materialises from the catalog's bucket, and boto3 is
-    # what reads it. It went unnoticed while the only host synced the whole
-    # workspace, which brings boto3 in through the feature store.
-    "strata-catalog[s3]>=0.1,<0.2",
+    # With s3 and postgres: a host materialises from the catalog's bucket and
+    # reads its shared index, and boto3 and psycopg are what do it. Both went
+    # unnoticed while the only host synced the whole workspace, which brings
+    # them in through the feature store.
+    "strata-catalog[s3,postgres]>=0.1,<0.2",
     "strata-common[service]>=0.1,<0.2",
     "fastapi>=0.100",
     "uvicorn>=0.20",
