@@ -39,7 +39,9 @@ jobs:
 
   # Split out because the extras pull several GB of wheels. Typed here,
   # with every extra installed, so an optional framework is a real import
-  # rather than a missing one.
+  # rather than a missing one. Pinned to the oldest supported Python: with
+  # no lock, uv takes the newest one, and torch ships wheels for a new
+  # Python months after it is released.
   tests-extras:
     name: tests (--extra all)
     runs-on: ubuntu-latest
@@ -49,7 +51,7 @@ jobs:
         with:
           enable-cache: true
       - run: .github/sibling-wheels.sh contracts common evaluation catalog
-      - run: uv sync --no-cache --find-links dist --group dev --extra all --extra service
+      - run: uv sync --no-cache --python 3.13 --find-links dist --group dev --extra all --extra service
       - run: uv run --no-sync python -c "import strata.modelling.baselines.image"
       - run: uv run --no-sync python -c "import strata.modelling.baselines.text"
       - run: uv run --no-sync pytest -q
