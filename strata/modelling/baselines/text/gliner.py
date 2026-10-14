@@ -52,13 +52,35 @@ DEFAULT_PROMPTS = {
 #: to be the same one the model uses.
 WORD = re.compile(r"\w+(?:[-_]\w+)*|\S")
 
+#: The same, but a URL or an email address is one word. GLiNER's own
+#: splitter makes every "/", "." and "=" a word, and a span is at most
+#: ``max_width`` words, so most URLs could not be one span at all. A
+#: closing bracket, quote or sentence punctuation stays outside, as the
+#: labelling guide has it.
+WHOLE = re.compile(
+    r"(?:https?://|www\.)[^\s<>\"'()\[\]]*[^\s<>\"'()\[\].,;:!?]"
+    r"|[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
+    r"|\w+(?:[-_]\w+)*|\S"
+)
+
 #: The checkpoint file's layout, so a later one can still read this one.
 FORMAT = 1
 
 
-def words(text: str) -> list[tuple[int, int]]:
+def words(text: str, pattern: re.Pattern = WORD) -> list[tuple[int, int]]:
     """Each word's character range, in order."""
-    return [(m.start(), m.end()) for m in WORD.finditer(text)]
+    return [(m.start(), m.end()) for m in pattern.finditer(text)]
+
+
+class Splitter:
+    """A word splitter in the shape GLiNER's processor calls: (word, start, end)."""
+
+    def __init__(self, pattern: re.Pattern):
+        self.pattern = pattern
+
+    def __call__(self, text: str):
+        for m in self.pattern.finditer(text):
+            yield m.group(), m.start(), m.end()
 
 
 def windows(count: int, size: int, overlap: int) -> list[tuple[int, int]]:
@@ -77,7 +99,7 @@ def windows(count: int, size: int, overlap: int) -> list[tuple[int, int]]:
 
 
 def to_training(
-    text: str, spans: list[Span], prompts: dict[str, str], size: int
+    text: str, spans: list[Span], prompts: dict[str, str], size: int, pattern: re.Pattern = WORD
 ) -> tuple[list[dict], int]:
     """GLiNER's training records for one document, and how many spans didn't fit.
 
@@ -85,7 +107,7 @@ def to_training(
     trained on twice. A span that doesn't start and end on a word, or that
     crosses a window's edge, is dropped and counted.
     """
-    bounds = words(text)
+    bounds = words(text, pattern)
     first = {start: i for i, (start, _) in enumerate(bounds)}
     last = {end: i for i, (_, end) in enumerate(bounds)}
     placed: list[tuple[int, int, str]] = []
@@ -126,6 +148,7 @@ class GlinerSpanTagger(Model):
         threshold: float = 0.5,
         prompts: dict[str, str] | None = None,
         max_width: int | None = None,
+        whole_urls: bool = False,
         chunk_words: int | None = None,
         chunk_overlap: int = 32,
         lr: float = 5e-6,
@@ -137,6 +160,8 @@ class GlinerSpanTagger(Model):
         """``max_width`` and ``chunk_words`` default to the checkpoint's own
         ``max_width`` and ``max_len``. ``revision`` pins the checkpoint; left
         out, the one loaded is resolved and kept in the saved model.
+        ``whole_urls`` makes each URL and email address one word (see
+        ``WHOLE``), for the model and for the windows alike.
         """
         if chunk_words is not None and chunk_overlap >= chunk_words:
             raise ValueError(
@@ -149,6 +174,7 @@ class GlinerSpanTagger(Model):
         self.threshold = threshold
         self.prompts = {**DEFAULT_PROMPTS, **(prompts or {})}
         self.max_width = max_width
+        self.whole_urls = whole_urls
         self.chunk_words = chunk_words
         self.chunk_overlap = chunk_overlap
         self.lr = lr
@@ -171,12 +197,18 @@ class GlinerSpanTagger(Model):
         model = GLiNER.from_pretrained(self.checkpoint, revision=self.revision, **overrides)
         if state_dict is not None:
             model.load_state_dict(state_dict)
+        if self.whole_urls:
+            # What the processor splits with, at training and at inference
+            model.data_processor.words_splitter = Splitter(WHOLE)
         self._model = model.to(self.device)
 
     def _net(self):
         if self._model is None or not self.classes:
             raise RuntimeError("Model has no weights. Call finetune() or load() first.")
         return self._model
+
+    def _pattern(self) -> re.Pattern:
+        return WHOLE if self.whole_urls else WORD
 
     def _window(self) -> int:
         size = self.chunk_words or int(getattr(self._net().config, "max_len", 384))
@@ -225,7 +257,9 @@ class GlinerSpanTagger(Model):
         dropped = 0
         for example in train:
             spans = list(example.target.values) if example.target is not None else []
-            found, lost = to_training(read_text(example.path), spans, self.prompts, size)
+            found, lost = to_training(
+                read_text(example.path), spans, self.prompts, size, self._pattern()
+            )
             records += found
             dropped += lost
         steps = max(1, self.num_epochs * -(-len(records) // self.batch_size))
@@ -273,7 +307,7 @@ class GlinerSpanTagger(Model):
             task = progress.add_task("predict", total=len(paths))
             for done, path in enumerate(paths, start=1):
                 text = read_text(path)
-                bounds = words(text)
+                bounds = words(text, self._pattern())
                 per_window = []
                 ranges = windows(len(bounds), size, overlap) if bounds else []
                 pieces = [(bounds[a][0], text[bounds[a][0] : bounds[b - 1][1]]) for a, b in ranges]
@@ -313,6 +347,7 @@ class GlinerSpanTagger(Model):
                 "classes": self.classes,
                 "prompts": self.prompts,
                 "max_width": self.max_width,
+                "whole_urls": self.whole_urls,
                 "state_dict": self._model.state_dict() if self.trained else None,
             },
             path,
@@ -325,6 +360,7 @@ class GlinerSpanTagger(Model):
         self.classes = list(saved["classes"])
         self.prompts = dict(saved["prompts"])
         self.max_width = saved["max_width"]
+        self.whole_urls = saved.get("whole_urls", False)
         self.trained = saved["state_dict"] is not None
         self._load(saved["state_dict"])
 

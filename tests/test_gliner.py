@@ -18,7 +18,13 @@ pytest.importorskip("transformers", reason="needs the text extra")
 from strata.contracts import Span, Spans
 from strata.modelling import Example
 from strata.modelling.baselines.text import gliner as module
-from strata.modelling.baselines.text.gliner import GlinerSpanTagger, to_training, windows, words
+from strata.modelling.baselines.text.gliner import (
+    WHOLE,
+    GlinerSpanTagger,
+    to_training,
+    windows,
+    words,
+)
 from strata.modelling.plugins.conformance import ModelContract
 
 TEXT = "alpha beta gamma delta"
@@ -34,6 +40,7 @@ class StandIn(torch.nn.Module):
         super().__init__()
         self.weight = torch.nn.Parameter(torch.zeros(2))
         self.config = types.SimpleNamespace(max_len=max_len, max_width=12)
+        self.data_processor = types.SimpleNamespace(words_splitter=None)
 
     @classmethod
     def from_pretrained(cls, checkpoint, revision=None, **overrides):
@@ -241,3 +248,51 @@ def test_overlapping_or_multi_label_schemas_are_refused():
 
     with pytest.raises(ValueError, match="overlapping"):
         GlinerSpanTagger(device="cpu").requires_schema(SpanSchema(classes=["A"], overlapping=True))
+
+
+# ----------------------------------------------------------------------
+# Whole URLs
+# ----------------------------------------------------------------------
+
+
+def test_a_url_or_an_address_can_be_one_word_with_punctuation_outside():
+    text = "See (https://x.org/a?b=1&c=2). Or www.y.net/q, or ana@x.org."
+    assert [text[a:b] for a, b in words(text, WHOLE)] == [
+        "See",
+        "(",
+        "https://x.org/a?b=1&c=2",
+        ")",
+        ".",
+        "Or",
+        "www.y.net/q",
+        ",",
+        "or",
+        "ana@x.org",
+        ".",
+    ]
+
+
+def test_a_url_span_becomes_a_one_word_training_span():
+    text = "Go to https://x.org/a/b/c/d/e/f/g/h/i/j/k now"
+    span = Span(labels=["URL"], start=6, end=41)
+    [record], dropped = to_training(text, [span], {"URL": "url"}, 384, WHOLE)
+    assert (record["ner"], dropped) == ([[2, 2, "url"]], 0)
+    # Split GLiNER's way it is 26 words, past any max_width of 12
+    [record], _ = to_training(text, [span], {"URL": "url"}, 384)
+    assert record["ner"][0][1] - record["ner"][0][0] + 1 > 12
+
+
+def test_whole_urls_reaches_the_model_and_survives_a_checkpoint(documents, tmp_path):
+    model = GlinerSpanTagger(device="cpu", whole_urls=True)
+    model.finetune([Example(path=documents[0], target=target())], ["WORD", "OTHER"])
+    assert model._model.data_processor.words_splitter.pattern is WHOLE
+    model.save(tmp_path / "run.pt")
+    restored = GlinerSpanTagger(device="cpu")
+    restored.load(tmp_path / "run.pt")
+    assert restored.whole_urls and restored._model.data_processor.words_splitter.pattern is WHOLE
+
+
+def test_whole_urls_is_off_unless_asked_for(documents):
+    model = GlinerSpanTagger(device="cpu")
+    model.finetune([Example(path=documents[0], target=target())], ["WORD", "OTHER"])
+    assert model._model.data_processor.words_splitter is None
