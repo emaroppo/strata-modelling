@@ -11,9 +11,12 @@ import types
 from typing import ClassVar
 
 import pytest
-import torch
 
+# Skipped, not failed, on a base install: the stand-in is a torch module
+pytest.importorskip("torch", reason="needs the text extra")
 pytest.importorskip("transformers", reason="needs the text extra")
+
+import torch
 
 from strata.contracts import Span, Spans
 from strata.modelling import Example
