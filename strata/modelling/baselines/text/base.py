@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from ...model import Example, Model
-from .._shared import console, epoch_progress, pick_device, predict_progress
+from .._shared import console, epoch_progress, pick_device, predict_progress, seed_everything
 from .windows import DEFAULT_ENCODER, WindowDataset, Windowed, read_text
 
 
@@ -34,6 +34,7 @@ class TransformerBase(Windowed, Model):
         window: int | None = None,
         window_overlap: int | None = None,
         window_aggregation: str | None = None,
+        seed: int | None = None,
     ):
         """``window`` is off by default; off means truncation at ``MAX_LENGTH``.
 
@@ -41,7 +42,8 @@ class TransformerBase(Windowed, Model):
         in ``[model.params]`` and recorded on the run (``docs/adr/0014``).
         ``window_overlap`` is how many tokens consecutive windows share; it
         must exceed the longest thing being labelled, and defaults to a
-        quarter of the window.
+        quarter of the window. ``seed`` makes training repeatable; None
+        leaves it to chance, as before.
         """
         if window is not None:
             if window_overlap is None:
@@ -71,6 +73,7 @@ class TransformerBase(Windowed, Model):
         self.batch_size = batch_size
         self.lr = lr
         self.window_aggregation = window_aggregation
+        self.seed = seed
         self.device = pick_device(device)
         self.classes: list[str] = []
         self._model: nn.Module | None = None
@@ -146,6 +149,8 @@ class TransformerBase(Windowed, Model):
         val: list[Example] | None = None,
         on_epoch=None,
     ) -> dict:
+        # Before the head is built, so its initialisation is seeded too
+        seed_everything(self.seed)
         self._prepare(classes)
         dataset, loader = self._loader(train, shuffle=True)
         optimizer = torch.optim.AdamW(self._net().parameters(), lr=self.lr, weight_decay=0.01)

@@ -29,4 +29,6 @@ def span_scores(truth: list, predicted: list) -> dict[str, float]:
     }
     for label, tally in scores.per_class.items():
         named[f"val_span_f1_{label}"] = round(tally.f1, 4)
+    for label, tally in scores.per_class_partial.items():
+        named[f"val_span_partial_f1_{label}"] = round(tally.f1, 4)
     return named

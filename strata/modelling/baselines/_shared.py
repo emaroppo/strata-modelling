@@ -46,6 +46,25 @@ def predict_progress() -> Progress:
     )
 
 
+def seed_everything(seed: int | None) -> None:
+    """Make a training run repeatable when a seed is given; a no-op otherwise.
+
+    Python's, numpy's and torch's generators, CUDA's included, so the head's
+    initialisation and the shuffle order are the same run to run. A grid
+    over seeds is how a comparison sees the spread a single run hides.
+    """
+    if seed is None:
+        return
+    import random
+
+    import numpy
+
+    random.seed(seed)
+    numpy.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+
 def pick_device(name: str | None) -> torch.device:
     """The device asked for, else the best one present."""
     return torch.device(

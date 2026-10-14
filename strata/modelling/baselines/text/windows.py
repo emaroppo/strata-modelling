@@ -14,8 +14,16 @@ DEFAULT_ENCODER = "distilbert-base-uncased"
 
 
 def read_text(path: str | Path) -> str:
+    """A document exactly as stored, which is what span offsets count.
+
+    ``newline=""`` keeps ``\r\n`` as two characters: read in text mode it
+    becomes one, and every span after the first line ending in a document
+    ingested before text was canonical would point one character early per
+    line, in training and in prediction alike.
+    """
     try:
-        return Path(path).read_text(encoding="utf-8", errors="replace")
+        with open(path, encoding="utf-8", errors="replace", newline="") as f:
+            return f.read()
     except OSError as e:
         print(f"warning: unreadable document {path} ({e}), using empty text", file=sys.stderr)
         return ""

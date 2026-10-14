@@ -9,6 +9,8 @@ framework is an optional dependency. See ``docs/adr/0034``.
 #: Baseline package -> the install extra carrying its framework
 EXTRAS: dict[str, str] = {
     "strata.modelling.baselines.image": "image",
+    # Before its parent: the first prefix that matches is the one named
+    "strata.modelling.baselines.text.gliner": "gliner",
     "strata.modelling.baselines.text": "text",
 }
 

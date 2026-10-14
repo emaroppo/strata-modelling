@@ -114,3 +114,9 @@ def test_a_region_with_no_labels_asserts_nothing():
     # Not an entity, and counting it as one would invent a class
     scores = span_scores([[]], [[Span(labels=[], start=0, end=4)]])
     assert scores["val_span_precision"] == 0.0
+
+
+def test_per_class_partial_scores_are_reported_beside_the_exact_ones():
+    scores = span_scores([[s("PER", 0, 5), s("ORG", 10, 15)]], [[s("PER", 0, 6)]])
+    assert (scores["val_span_f1_PER"], scores["val_span_partial_f1_PER"]) == (0.0, 1.0)
+    assert scores["val_span_partial_f1_ORG"] == 0.0

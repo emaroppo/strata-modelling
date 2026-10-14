@@ -229,3 +229,14 @@ def test_collate_leaves_offsets_out_of_the_model(tagger):
     # offsets are for decoding; the forward pass would reject the keyword
     assert "offsets" not in batch
     assert isinstance(batch["input_ids"], torch.Tensor)
+
+
+def test_a_document_is_read_with_its_carriage_returns(tmp_path):
+    """Offsets count \\r. Read in text mode, a CRLF document's spans after the
+    first line would each land a character early per line.
+    """
+    from strata.modelling.baselines.text.windows import read_text
+
+    path = tmp_path / "doc.txt"
+    path.write_bytes(b"Dear Ana,\r\nRoom 4120\r\n")
+    assert read_text(path) == "Dear Ana,\r\nRoom 4120\r\n"

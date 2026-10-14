@@ -205,3 +205,29 @@ class TestWindowedSpanTagger(TestTextSpanTagger):
     """
 
     WINDOW: ClassVar[dict] = {"window": 8, "window_overlap": 2}
+
+
+def test_a_seed_makes_training_repeatable(tokenizer, monkeypatch, tmp_path):
+    """The head's initialisation and the shuffle order both come from it."""
+    paths = []
+    for i in range(4):
+        path = tmp_path / f"doc{i}.txt"
+        path.write_text("alpha beta gamma delta")
+        paths.append(path)
+    examples = [
+        Example(path=p, target=Spans(values=[Span(labels=["WORD"], start=0, end=5, text="alpha")]))
+        for p in paths
+    ]
+
+    def trained(seed):
+        model = TextSpanTagger(num_epochs=2, batch_size=2, device="cpu", seed=seed)
+        model._tokenizer = tokenizer
+        monkeypatch.setattr(
+            TextSpanTagger, "_build_model", lambda self, n: _TinyEncoder(n, per_token=True)
+        )
+        model.finetune(examples, ["WORD", "OTHER"])
+        return [p.confidences for p in model.predict(paths)], model._net().state_dict()
+
+    (first, weights), (again, weights_again) = trained(7), trained(7)
+    assert first == again
+    assert all(torch.equal(weights[k], weights_again[k]) for k in weights)

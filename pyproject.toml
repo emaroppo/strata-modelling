@@ -41,8 +41,16 @@ text = [
     "tokenizers>=0.22,<0.23",
     "rich>=13.0",
 ]
+# GLiNER, a span model scored against label prompts, zero-shot or
+# fine-tuned. Its own extra: it brings sentencepiece, and caps transformers
+# below 5.17, which nothing else here should inherit.
+gliner = [
+    "strata-modelling[text]",
+    # [training]: its fine-tuning runs on transformers' Trainer, which needs accelerate
+    "gliner[training]>=0.2.29,<0.3",
+]
 all = [
-    "strata-modelling[image,text]",
+    "strata-modelling[image,text,gliner]",
 ]
 # The conformance suite is importable by plugins so they can run the model
 # contract against their own model. It is the only thing here needing pytest.
@@ -80,6 +88,7 @@ presence = "strata.modelling.baselines.image.variants:PresenceClassifier"
 text = "strata.modelling.baselines.text.classifier:TextClassifier"
 text-multiclass = "strata.modelling.baselines.text.multiclass:TextMulticlassClassifier"
 text-span = "strata.modelling.baselines.text.tagger:TextSpanTagger"
+gliner-span = "strata.modelling.baselines.text.gliner:GlinerSpanTagger"
 
 
 # What developing this package alone needs beyond its extras. Inside the
