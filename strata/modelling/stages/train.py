@@ -37,6 +37,10 @@ class TrainStageRequest(Strict):
     #: The experiment file asking, by its hash, recorded on the run wherever
     #: it is made. None from the command line.
     experiment_id: str | None = None
+    #: A share of the training side, for a learning curve; nested per
+    #: ``subset_seed``. See :class:`strata.modelling.requests.TrainRequest`.
+    train_fraction: float = Field(default=1.0, gt=0.0, le=1.0)
+    subset_seed: int = 0
 
 
 class TrainRecord(Strict):
@@ -92,6 +96,8 @@ def _train_here(request: TrainStageRequest, context: Context) -> TrainRecord:
             params=params,
             parent_run_id=parent.id if parent else None,
             experiment_id=request.experiment_id,
+            train_fraction=request.train_fraction,
+            subset_seed=request.subset_seed,
         ),
         store,
         on_epoch=context.on_epoch,
@@ -100,6 +106,12 @@ def _train_here(request: TrainStageRequest, context: Context) -> TrainRecord:
 
 
 def _train_there(request: TrainStageRequest, context: Context, host: Host) -> TrainRecord:
+    if request.train_fraction < 1.0:
+        # Refused rather than silently trained on everything
+        raise StageError(
+            "A train_fraction below 1 is only supported for rounds trained here, "
+            "not on a modelling host. Run the learning curve locally."
+        )
     if request.dataset is None:
         raise StageError(
             "Training on the modelling host needs the dataset's identity — id, name, "

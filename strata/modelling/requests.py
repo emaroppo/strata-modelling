@@ -32,6 +32,11 @@ class TrainRequest(BaseModel):
     #: Recorded on the run. The orchestrator sets it; a round from the
     #: command line has none. See ``docs/adr/0005``.
     experiment_id: str | None = None
+    #: Train on this share of the training side, for a learning curve.
+    #: Subsets are nested: for one ``subset_seed``, a smaller fraction's
+    #: samples are always among a larger one's. Validation is never cut.
+    train_fraction: float = Field(default=1.0, gt=0.0, le=1.0)
+    subset_seed: int = 0
 
 
 class PredictRequest(BaseModel):

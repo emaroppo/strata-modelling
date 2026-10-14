@@ -471,3 +471,43 @@ def test_the_run_records_which_of_what_it_saw_nobody_checked(store, dataset_dir)
         Unchecked("train", "second", 2, 2),
         Unchecked("val", "second", 2, 2),
     ]
+
+
+# ----------------------------------------------------------------------
+# Training on a share of the training side
+# ----------------------------------------------------------------------
+
+
+def test_a_training_subset_is_nested_deterministic_and_never_empty(tmp_path):
+    from strata.modelling.handlers import nested_subset
+    from strata.modelling.model import Example
+
+    train_set = [Example(path=tmp_path / f"s{i}.txt", target=None) for i in range(20)]
+    names = lambda subset: {e.path.name for e in subset}  # noqa: E731
+    quarter, half = nested_subset(train_set, 0.25, 1), nested_subset(train_set, 0.5, 1)
+    assert (len(quarter), len(half)) == (5, 10)
+    assert names(quarter) < names(half)
+    # The manifest's order doesn't matter; the seed does
+    assert names(nested_subset(list(reversed(train_set)), 0.25, 1)) == names(quarter)
+    assert names(nested_subset(train_set, 0.25, 2)) != names(quarter)
+    assert len(nested_subset(train_set, 0.01, 1)) == 1
+    assert nested_subset(train_set, 1.0, 1) == train_set
+
+
+def test_a_run_on_a_fraction_trains_on_that_share_and_records_it(store, dataset_dir):
+    request = TrainRequest(
+        dataset_dir=dataset_dir(n_train=8, n_val=2), model=COUNTER, train_fraction=0.5
+    )
+    run = train(request, store)
+    assert run.metrics["train_samples"] == 4.0
+    whole = train(TrainRequest(dataset_dir=dataset_dir(n_train=8, n_val=2), model=COUNTER), store)
+    assert whole.metrics["train_samples"] == 8.0
+
+
+def test_a_fraction_outside_zero_to_one_is_refused():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        TrainRequest(dataset_dir=".", model=COUNTER, train_fraction=0.0)
+    with pytest.raises(ValidationError):
+        TrainRequest(dataset_dir=".", model=COUNTER, train_fraction=1.5)

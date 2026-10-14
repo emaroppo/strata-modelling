@@ -201,6 +201,14 @@ def test_a_host_on_another_catalog_is_refused_before_anything_is_sent(monkeypatc
         train(TrainStageRequest(dataset=_identity(), model="multilabel"), _there())
 
 
+def test_a_training_fraction_is_refused_on_a_host_rather_than_ignored():
+    with pytest.raises(StageError, match="train_fraction"):
+        train(
+            TrainStageRequest(dataset=_identity(), model="multilabel", train_fraction=0.5),
+            _there(),
+        )
+
+
 def test_a_failed_job_is_an_error_naming_the_hosts_reason(monkeypatch):
     monkeypatch.setattr(FakeHost, "outcome", {"state": "failed", "error": "OOM"})
     with pytest.raises(RemoteError, match="OOM"):

@@ -4,7 +4,9 @@ The in-process path and the HTTP adapter call *these functions*, so
 validation happens once. See ``docs/adr/0007``.
 """
 
+import hashlib
 import inspect
+import math
 from pathlib import Path
 
 from sqlalchemy import update
@@ -69,6 +71,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
     train_examples, val_examples = examples(request.dataset_dir, manifest)
     if not train_examples:
         raise TrainingError(f"{request.dataset_dir} has no training samples")
+    train_examples = nested_subset(train_examples, request.train_fraction, request.subset_seed)
 
     # Kept as well as forwarded; a model that never calls back records no
     # curve. docs/adr/0005
@@ -81,6 +84,8 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
         return on_epoch(done, total, reported) if on_epoch is not None else None
 
     metrics = model.finetune(train_examples, classes, val_examples or None, collect)
+    # How much was trained on, on the run itself: a learning curve's x axis
+    metrics["train_samples"] = float(len(train_examples))
 
     run = store.record(
         Run(
@@ -160,6 +165,21 @@ def _read_manifest(directory: Path) -> Manifest:
     except ManifestFormatError as e:
         # Refused rather than rebuilt. docs/adr/0004
         raise TrainingError(f"{directory}: {e}") from None
+
+
+def nested_subset(train: list[Example], fraction: float, seed: int) -> list[Example]:
+    """The first ``fraction`` of ``train`` in an order fixed by ``seed``.
+
+    Ranked by a hash of the seed and each file's name, never by position, so
+    the subsets for one seed are nested — 25% inside 50% inside 100% — and
+    the same whatever order the manifest lists them in. At least one sample.
+    """
+    if fraction >= 1.0:
+        return train
+    ranked = sorted(
+        train, key=lambda e: hashlib.sha256(f"{seed}:{Path(e.path).name}".encode()).hexdigest()
+    )
+    return ranked[: max(1, math.ceil(fraction * len(train)))]
 
 
 def examples(directory: Path, manifest: Manifest) -> tuple[list[Example], list[Example]]:
