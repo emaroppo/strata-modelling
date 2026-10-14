@@ -21,10 +21,11 @@ counted, never stored askew.
 import re
 import tempfile
 from pathlib import Path
+from typing import cast
 
 import torch
 
-from strata.contracts import Span, SpansPrediction
+from strata.contracts import Span, Spans, SpansPrediction
 
 from ...model import Example, Model
 from .._shared import pick_device, predict_progress, seed_everything
@@ -193,8 +194,10 @@ class GlinerSpanTagger(Model):
 
         if self.revision is None:
             self.revision = _resolved(self.checkpoint)
-        overrides = {"max_width": self.max_width} if self.max_width is not None else {}
-        model = GLiNER.from_pretrained(self.checkpoint, revision=self.revision, **overrides)
+        # None leaves the checkpoint's own max_width
+        model = GLiNER.from_pretrained(
+            self.checkpoint, revision=self.revision, max_width=self.max_width
+        )
         if state_dict is not None:
             model.load_state_dict(state_dict)
         if self.whole_urls:
@@ -246,7 +249,8 @@ class GlinerSpanTagger(Model):
         if val:
             predicted = self.predict([example.path for example in val])
             truth = [
-                list(example.target.values) if example.target is not None else [] for example in val
+                list(example.target.values) if isinstance(example.target, Spans) else []
+                for example in val
             ]
             metrics.update(span_scores(truth, [list(p.values) for p in predicted]))
         return metrics
@@ -256,7 +260,7 @@ class GlinerSpanTagger(Model):
         records: list[dict] = []
         dropped = 0
         for example in train:
-            spans = list(example.target.values) if example.target is not None else []
+            spans = list(example.target.values) if isinstance(example.target, Spans) else []
             found, lost = to_training(
                 read_text(example.path), spans, self.prompts, size, self._pattern()
             )
@@ -311,7 +315,9 @@ class GlinerSpanTagger(Model):
                 per_window = []
                 ranges = windows(len(bounds), size, overlap) if bounds else []
                 pieces = [(bounds[a][0], text[bounds[a][0] : bounds[b - 1][1]]) for a, b in ranges]
-                found = (
+                # A list of texts in, a list of entity lists out
+                found = cast(
+                    list[list[dict]],
                     model.inference(
                         [piece for _, piece in pieces],
                         labels,
@@ -320,7 +326,7 @@ class GlinerSpanTagger(Model):
                         batch_size=self.batch_size,
                     )
                     if pieces
-                    else []
+                    else [],
                 )
                 for (offset, _), entities in zip(pieces, found, strict=True):
                     per_window.append(_prediction(text, entities, offset, by_prompt))
@@ -338,7 +344,7 @@ class GlinerSpanTagger(Model):
         Zero-shot keeps no weights: the pinned revision of the checkpoint
         is what it predicts with, fetched again on load.
         """
-        self._net()
+        net = self._net()
         torch.save(
             {
                 "format": FORMAT,
@@ -348,7 +354,7 @@ class GlinerSpanTagger(Model):
                 "prompts": self.prompts,
                 "max_width": self.max_width,
                 "whole_urls": self.whole_urls,
-                "state_dict": self._model.state_dict() if self.trained else None,
+                "state_dict": net.state_dict() if self.trained else None,
             },
             path,
         )
