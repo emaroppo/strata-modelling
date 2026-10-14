@@ -48,6 +48,9 @@ gliner = [
     "strata-modelling[text]",
     # [training]: its fine-tuning runs on transformers' Trainer, which needs accelerate
     "gliner[training]>=0.2.29,<0.3",
+    # DeBERTa-based checkpoints ship a SentencePiece tokenizer, which
+    # transformers 5 converts through protobuf; without it they don't load.
+    "protobuf>=4.0",
 ]
 all = [
     "strata-modelling[image,text,gliner]",
