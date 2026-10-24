@@ -93,11 +93,26 @@ def test_training_here_needs_a_directory(store):
 # ----------------------------------------------------------------------
 
 
+#: The run a fake host trained, as it records it.
+HOST_RUN = {
+    "id": "20260101T000000000000-gpu",
+    "dataset": "d",
+    "dataset_version": 1,
+    "label_set": "presence",
+    "model": "multilabel",
+    "model_version": "1",
+    "classes": ["cat", "dog"],
+    "metrics": {"val_accuracy": 0.8},
+}
+
+
 class FakeHost:
     """The client's surface, answering as a host would."""
 
     served: ClassVar[dict] = {"name": "main", "id": "cat-1"}
     outcome: ClassVar[dict] = {"state": "done"}
+    #: What it says of a run it is asked about: one kept checkpoint.
+    held: ClassVar[dict] = {**HOST_RUN, "checkpoints": [{"name": "final", "digest": "d" * 64}]}
 
     def __init__(self, url, token):
         self.url, self.token = url, token
@@ -113,20 +128,13 @@ class FakeHost:
     def follow(self, job_id, on_state=None):
         if on_state:
             on_state({"state": "running", "stage": "training"})
-        run = {
-            "id": "20260101T000000000000-gpu",
-            "dataset": "d",
-            "dataset_version": 1,
-            "label_set": "presence",
-            "model": "multilabel",
-            "model_version": "1",
-            "classes": ["cat", "dog"],
-            "metrics": {"val_accuracy": 0.8},
-        }
         return {
             **self.outcome,
-            "result": {"run": run, "metrics": {"val_accuracy": 0.8}, "materialised": 12},
+            "result": {"run": HOST_RUN, "metrics": {"val_accuracy": 0.8}, "materialised": 12},
         }
+
+    def run(self, run_id):
+        return {"run": {**self.held, "id": run_id}, "metrics": {}}
 
 
 def _identity(**overrides) -> DatasetIdentity:

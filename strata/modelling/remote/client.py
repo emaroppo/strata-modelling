@@ -123,7 +123,7 @@ class Trainer:
         """
         return self._call("/generate", request.model_dump(mode="json"), timeout=120)
 
-    def run(self, run_id: int) -> dict | None:
+    def run(self, run_id: str) -> dict | None:
         """One run there, or None. Its numbering, not this machine's."""
         try:
             return self._call(f"/runs/{run_id}", timeout=30)

@@ -11,15 +11,17 @@ from ..remote.checks import check_catalog
 from ..remote.client import RemoteError
 from ..remote.wire import RoundRequest, SplitSides
 from ..requests import Run, TrainRequest
-from ._context import Context, DatasetIdentity, Host, StageError, Strict, Where, _manifest
+from ._context import Context, DatasetIdentity, Host, Keyed, StageError, Strict, Where, _manifest
 
 
-class TrainStageRequest(Strict):
+class TrainStageRequest(Keyed):
     """One round of training, wherever it runs.
 
     Locally the directory is what is trained from. Remotely the host
     materialises for itself from ``dataset`` (``docs/adr/0007``).
     """
+
+    later = frozenset({"parent_checkpoint"})
 
     dataset_dir: Path | None = None
     dataset: DatasetIdentity | None = None
@@ -32,6 +34,10 @@ class TrainStageRequest(Strict):
     #: (``docs/adr/0025``).
     fresh: bool = False
     parent: str | None = None
+    #: Which of ``parent``'s checkpoints to continue from, by name. None is
+    #: its last. Only with a named parent: a checkpoint's name means
+    #: nothing until the run is known. See ``docs/adr/0054``.
+    parent_checkpoint: str | None = None
     #: Declarations only, for the host to resolve as it materialises.
     features: list[dict] = Field(default_factory=list)
     #: The experiment file asking, by its hash, recorded on the run wherever
@@ -73,6 +79,11 @@ def _train_here(request: TrainStageRequest, context: Context) -> TrainRecord:
     if store is None:
         raise StageError("Training here needs a run store; none was given.")
 
+    if request.parent_checkpoint is not None and request.parent is None:
+        raise StageError(
+            f"parent_checkpoint {request.parent_checkpoint!r} names a checkpoint of no run: "
+            f"name the run it belongs to as parent."
+        )
     if request.parent is not None:
         parent = store.get(request.parent)
         if parent is None:
@@ -95,6 +106,7 @@ def _train_here(request: TrainStageRequest, context: Context) -> TrainRecord:
             model=request.model,
             params=params,
             parent_run_id=parent.id if parent else None,
+            parent_checkpoint=request.parent_checkpoint,
             experiment_id=request.experiment_id,
             train_fraction=request.train_fraction,
             subset_seed=request.subset_seed,
@@ -111,6 +123,12 @@ def _train_there(request: TrainStageRequest, context: Context, host: Host) -> Tr
         raise StageError(
             "A train_fraction below 1 is only supported for rounds trained here, "
             "not on a modelling host. Run the learning curve locally."
+        )
+    if request.parent_checkpoint is not None:
+        # The host picks its own parent, and a round names none
+        raise StageError(
+            "A parent_checkpoint is only supported for rounds trained here, not on a "
+            "modelling host, which chooses the parent itself."
         )
     if request.dataset is None:
         raise StageError(

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from counting_model import COUNTER, COUNTING_MODEL, SPAN_COUNTER, SPAN_MODEL
+from media_model import ECHO, ECHO_MODEL
 
 from strata.contracts import MANIFEST_FORMAT, ChoicesPrediction
 from strata.modelling import RunStore
@@ -105,3 +106,48 @@ def dataset_dir(tmp_path):
 @pytest.fixture
 def prediction() -> ChoicesPrediction:
     return ChoicesPrediction(values=["cat"], confidences=[0.8])
+
+
+@pytest.fixture
+def sft_dir(tmp_path, dataset_dir):
+    """A materialised SFT dataset: each file a body to write, its subject the input.
+
+    The label set is the verdicts that chose the samples, which is not what
+    the model learns (``docs/adr/0054``). ``dataset_dir`` is asked first
+    so the counting model sits beside it too.
+    """
+
+    def _make(types=("text/sft/phishnet",) * 6, n_val: int = 2, name: str = "sft"):
+        root = dataset_dir(name=name)
+        (root / ECHO.split(":")[0]).write_text(ECHO_MODEL)
+        samples = []
+        for i, kind in enumerate(types):
+            relative = f"files/body{i:03d}.txt"
+            (root / relative).write_text(f"body {i}")
+            samples.append(
+                {
+                    "id": i + 1,
+                    "checksum": f"{i:064d}",
+                    "type": kind,
+                    "path": relative,
+                    "split": "val" if i >= len(types) - n_val else "train",
+                    "value": {"kind": "choices", "values": ["keep"]},
+                    "features": {"subject": f"subject {i}"},
+                }
+            )
+        (root / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "format": MANIFEST_FORMAT,
+                    "dataset": name,
+                    "version": 1,
+                    "label_set": "verdicts",
+                    "label_schema": {"label_type": "classification", "classes": ["keep"]},
+                    "features": [{"name": "subject"}],
+                    "samples": samples,
+                }
+            )
+        )
+        return root
+
+    return _make

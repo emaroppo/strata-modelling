@@ -14,9 +14,9 @@ identity for the host to resolve against its own (``docs/adr/0008``).
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SerializerFunctionWrapHandler, model_serializer
 
 from strata.contracts import MANIFEST_NAME, Manifest
 
@@ -38,6 +38,31 @@ Where = Literal["local", "remote"]
 
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class Keyed(Strict):
+    """A stage's request, dumped as it was before its later fields existed.
+
+    An experiment keys a stage on its request's dump, defaults and all
+    (``docs/adr/0037``), so a field added with a default would move every
+    key a ledger already holds and orphan the records under them. A field
+    named in ``later`` is left out of the dump while it holds its default:
+    a request that does not use it dumps, and is keyed, as it was before
+    the field existed. One that does use it is another request, and its
+    key says so.
+    """
+
+    #: Fields added after the stage's keys were in ledgers.
+    later: ClassVar[frozenset[str]] = frozenset()
+
+    @model_serializer(mode="wrap")
+    def _as_before(self, handler: SerializerFunctionWrapHandler) -> Any:
+        dumped = handler(self)
+        fields = type(self).model_fields
+        for name in self.later:
+            if getattr(self, name) == fields[name].get_default(call_default_factory=True):
+                dumped.pop(name, None)
+        return dumped
 
 
 class StageError(Exception):
@@ -65,6 +90,11 @@ class Context:
     on_state: object = None
     #: How to build the client, so a test can hand in a fake host.
     client: Callable[[str, str], Trainer] = Trainer
+    #: Where what a media model generates to be scored is kept, one file per
+    #: checkpoint named by its content, so a record names it rather than
+    #: holding it. None keeps the outputs in the record. See
+    #: ``docs/adr/0054``.
+    outputs: Path | None = None
 
 
 # ----------------------------------------------------------------------
