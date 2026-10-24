@@ -5,12 +5,12 @@ Standard library only. See ``docs/adr/0005`` and ``docs/adr/0030``.
 """
 
 import argparse
-import json
-import sys
 from pathlib import Path
 
-from .store.merge import StoreMergeError, merge_stores
-from .store.runs import RunStore, RunStoreMissing
+from strata.common.cli import emit, run
+
+from .store.merge import merge_stores
+from .store.runs import RunStore, RunStoreError
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -42,58 +42,49 @@ def main(argv: list[str] | None = None) -> int:
     merge.set_defaults(run=_merge)
 
     args = parser.parse_args(argv)
-    try:
-        return args.run(args)
-    except StoreMergeError as e:
-        print(str(e), file=sys.stderr)
-        return 1
+    return run(lambda: args.run(args), RunStoreError)
 
 
 def _merge(args) -> int:
-    try:
-        source = RunStore.open(args.source)
-    except RunStoreMissing as e:
-        print(str(e), file=sys.stderr)
-        return 1
     report = merge_stores(
-        source,
+        RunStore.open(args.source),
         RunStore.local(args.target),
         checkpoints=args.checkpoints,
         dry_run=not args.apply,
     )
-    if args.json:
-        payload = {
-            "runs": report.runs,
-            "metrics": report.metrics,
-            "samples": report.samples,
-            "predictions": report.predictions,
-            "checkpoints": report.checkpoints,
-            "already_present": report.already_present,
-            "orphaned": report.orphaned,
-            "applied": args.apply,
-        }
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0
+    payload = {
+        "runs": report.runs,
+        "metrics": report.metrics,
+        "samples": report.samples,
+        "predictions": report.predictions,
+        "checkpoints": report.checkpoints,
+        "already_present": report.already_present,
+        "orphaned": report.orphaned,
+        "applied": args.apply,
+    }
 
-    if not report.runs and not report.already_present:
-        print(f"No runs in {args.source}.")
-        return 0
-    for line in report.lines():
-        print(f"  {line}")
-    if report.orphaned:
-        print(
-            "Some runs continued from a run in neither store. They were copied "
-            "without the link, so they read as cold."
-        )
-    if not args.apply:
-        print("Nothing was written. Re-run with --apply.")
-        return 0
-    print(f"{report.runs} run(s) merged")
-    if not args.checkpoints and report.runs:
-        print(
-            "Checkpoints were left behind, so the merged runs cannot be trained or "
-            "predicted from here. Pass --checkpoints if you need them."
-        )
+    def render(_):
+        if not report.runs and not report.already_present:
+            yield f"No runs in {args.source}."
+            return
+        for line in report.lines():
+            yield f"  {line}"
+        if report.orphaned:
+            yield (
+                "Some runs continued from a run in neither store. They were copied "
+                "without the link, so they read as cold."
+            )
+        if not args.apply:
+            yield "Nothing was written. Re-run with --apply."
+            return
+        yield f"{report.runs} run(s) merged"
+        if not args.checkpoints and report.runs:
+            yield (
+                "Checkpoints were left behind, so the merged runs cannot be trained or "
+                "predicted from here. Pass --checkpoints if you need them."
+            )
+
+    emit(payload, render, as_json=args.json)
     return 0
 
 
