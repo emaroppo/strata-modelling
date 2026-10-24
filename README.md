@@ -13,15 +13,19 @@ beneath it are named beside it.
 ```bash
 g=git+https://github.com/emaroppo
 uv add "strata-modelling @ $g/strata-modelling@v0.1.0" \
+       "strata-evaluation @ $g/strata-evaluation@v0.1.0" \
        "strata-contracts @ $g/strata-contracts@v0.1.0" \
        "strata-common @ $g/strata-common@v0.1.0"         # the core, no framework
 uv add "strata-modelling[image] @ $g/strata-modelling@v0.1.0"   # torch, torchvision, timm: the image baselines
 uv add "strata-modelling[text] @ $g/strata-modelling@v0.1.0"   # torch, transformers: the text baselines
-uv add "strata-modelling[service] @ $g/strata-modelling@v0.1.0" "strata-catalog @ $g/strata-catalog@v0.1.0"   # the training service, which also needs strata-catalog
+uv add "strata-modelling[service] @ $g/strata-modelling@v0.1.0" \
+       "strata-catalog @ $g/strata-catalog@v0.1.0" \
+       "strata-prepare @ $g/strata-prepare@v0.1.0"       # the training service, which also needs strata-catalog
 ```
 
-Depends on `strata-contracts` and `strata-common[migrations]`. May import
-`strata-catalog` only from its service layer, and never `strata-labeller`
+Depends on `strata-contracts`, `strata-evaluation` and
+`strata-common[migrations]`. May import `strata-catalog` only from its
+service layer, behind the `service` extra, and never `strata-labeller`
 or Label Studio. Asking for a baseline whose extra is not installed fails
 with a message naming the extra.
 
@@ -100,9 +104,10 @@ dataset's identity rather than a directory, materialises it from its own
 catalog, chooses the parent from the runs it holds, trains and records. A
 round is submitted and polled, one at a time, refused rather than queued.
 Both sides state a protocol, checked on `/healthz` before anything is
-sent. `strata.modelling.remote.clientTrainer` is the standard-library client.
+sent. `strata.modelling.remote.client.Trainer` is the standard-library client.
 
-The GPU host's user unit and environment example are under `deploy/gpu/`.
+The GPU host's user unit and environment example are under
+`deploy/modelling-host/`.
 The token comes from `STRATA_MODELLING_TOKEN`; where the catalog is comes
 from the `config.toml` that `STRATA_CONFIG` names.
 
