@@ -38,7 +38,7 @@ from strata.contracts import (
     SpansPrediction,
 )
 
-from ..model import Example, Model
+from ..model import Example, LabelModel
 
 
 def _class_names(values) -> set[str]:
@@ -69,7 +69,7 @@ class ModelContract:
     }
 
     @pytest.fixture
-    def model(self) -> Model:
+    def model(self) -> LabelModel:
         raise NotImplementedError("Supply a `model` fixture returning your model")
 
     @pytest.fixture
@@ -80,7 +80,7 @@ class ModelContract:
         )
 
     @pytest.fixture
-    def fresh(self, model) -> Model:
+    def fresh(self, model) -> LabelModel:
         """An untrained model of the same kind, for restoring a checkpoint into.
 
         Default-constructed, because that is what a caller loading a run does
@@ -138,7 +138,8 @@ class ModelContract:
     # -- declarations ---------------------------------------------------
 
     def test_it_is_a_model(self, model):
-        assert isinstance(model, Model)
+        # A label model: one subclassing Model directly is refused. docs/adr/0054
+        assert isinstance(model, LabelModel)
 
     def test_it_declares_a_label_type(self, model):
         # Checked before training. docs/adr/0014

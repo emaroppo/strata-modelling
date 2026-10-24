@@ -11,6 +11,7 @@ EXTRAS: dict[str, str] = {
     "strata.modelling.baselines.image": "image",
     # Before its parent: the first prefix that matches is the one named
     "strata.modelling.baselines.text.gliner": "gliner",
+    "strata.modelling.baselines.text.sft": "sft",
     "strata.modelling.baselines.text": "text",
 }
 

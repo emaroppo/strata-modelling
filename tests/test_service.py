@@ -5,6 +5,7 @@ handler the in-process path calls. So what is worth testing is the shell —
 what it refuses, and that the two paths agree.
 """
 
+import json
 import threading
 import time
 
@@ -482,6 +483,7 @@ def stub_predict(monkeypatch):
 
     def fake(request, store, on_batch=None):
         seen["paths"] = list(request.paths)
+        seen["checkpoint"] = request.checkpoint
         return [
             ScoredPath(path=path, value=ChoicesPrediction(values=["a"], confidences=[0.5]))
             for path in request.paths
@@ -545,6 +547,130 @@ def test_scoring_says_what_it_is_doing(tmp_path, stub_predict):
     # watching from elsewhere cannot see either
     assert "fetching" in stages
     assert "predicting" in stages
+
+
+def test_scoring_names_the_checkpoint_it_was_asked_for(tmp_path, stub_predict):
+    """And caches under it, so another checkpoint's answer is never handed back (0054)."""
+    from strata.modelling import PredictionCache, RunStore
+    from strata.modelling.remote.rounds import run_prediction
+    from strata.modelling.remote.wire import PredictionRequest
+
+    store = RunStore.local(tmp_path / "runs")
+    catalog = FakeCache({"a" * 64: tmp_path / "a.jpg"})
+    run_prediction(
+        PredictionRequest(run_id="1", checkpoint="epoch-2", checksums=["a" * 64]),
+        catalog,
+        store,
+        tmp_path / "cache",
+    )
+
+    assert stub_predict["checkpoint"] == "epoch-2"
+    cache = PredictionCache.beside(store)
+    assert set(cache.get("1", ["a" * 64], checkpoint="epoch-2")) == {"a" * 64}
+    assert cache.get("1", ["a" * 64], checkpoint="epoch-1") == {}
+
+
+def test_generating_here_fetches_the_inputs_samples_by_content(tmp_path, sft_run):
+    from strata.modelling.remote.rounds import run_generation
+    from strata.modelling.remote.wire import GenerationInputRef, GenerationRequest
+
+    store, run = sft_run
+    source = tmp_path / "source.txt"
+    source.write_text("to summarise")
+    catalog = FakeCache({"s" * 64: source})
+
+    result = run_generation(
+        GenerationRequest(
+            run_id=run.id,
+            checkpoint="epoch-1",
+            inputs=[GenerationInputRef(values={"subject": "hi"}, samples={"source": ["s" * 64]})],
+            settings=[{"temperature": 0.7}],
+            seeds=[4],
+        ),
+        catalog,
+        store,
+        tmp_path / "cache",
+    )
+
+    [out] = result.outputs
+    made = json.loads(out.data)
+    assert made["samples"] == {"source": ["to summarise"]}
+    assert (made["epoch"], out.checkpoint, out.seed) == (1, "epoch-1", 4)
+
+
+def test_generating_with_a_sample_the_host_does_not_know_makes_nothing(tmp_path, sft_run):
+    from strata.modelling.remote.rounds import run_generation
+    from strata.modelling.remote.wire import GenerationInputRef, GenerationRequest
+
+    store, run = sft_run
+    with pytest.raises(ServiceError, match="does not know 1 of the samples"):
+        run_generation(
+            GenerationRequest(
+                run_id=run.id,
+                inputs=[GenerationInputRef(samples={"source": ["u" * 64]})],
+                settings=[{}],
+                seeds=[0],
+            ),
+            FakeCache({}),
+            store,
+            tmp_path / "cache",
+        )
+
+
+def test_generated_bytes_survive_the_wire(tmp_path, sft_run):
+    """Base64 rather than text, so an image would come back as it went (0054)."""
+    from strata.modelling.remote.jobs import Job
+    from strata.modelling.remote.wire import GenerationResponse
+    from strata.modelling.requests import GeneratedOutput
+
+    raw = bytes(range(256))
+    job = Job(
+        id="j",
+        result=GenerationResponse(
+            outputs=[GeneratedOutput(data=raw, settings_digest="d", seed=1, checkpoint="final")]
+        ),
+    )
+
+    sent = json.loads(job.model_dump_json())
+    assert GenerationResponse.model_validate(sent["result"]).outputs[0].data == raw
+
+
+@pytest.fixture
+def sft_run(tmp_path):
+    """A media model's run with three checkpoints, recorded here."""
+    from media_model import ECHO, ECHO_MODEL
+
+    from strata.contracts import MANIFEST_FORMAT
+    from strata.modelling import RunStore, TrainRequest, train
+
+    root = tmp_path / "sft"
+    (root / "files").mkdir(parents=True)
+    (root / "echo.py").write_text(ECHO_MODEL)
+    samples = []
+    for i in range(3):
+        (root / "files" / f"{i}.txt").write_text(f"body {i}")
+        samples.append(
+            {
+                "checksum": f"{i:064d}",
+                "type": "text/sft",
+                "path": f"files/{i}.txt",
+                "split": "train",
+                "value": {"kind": "choices", "values": ["keep"]},
+            }
+        )
+    (root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "format": MANIFEST_FORMAT,
+                "dataset": "sft",
+                "label_set": "verdicts",
+                "label_schema": {"label_type": "classification", "classes": ["keep"]},
+                "samples": samples,
+            }
+        )
+    )
+    store = RunStore.local(tmp_path / "runs")
+    return store, train(TrainRequest(dataset_dir=root, model=ECHO), store)
 
 
 def test_a_cold_round_takes_the_fresh_params_whatever_was_asked(
@@ -768,6 +894,45 @@ def test_a_request_naming_no_protocol_is_refused(host):
 def test_a_request_in_this_protocol_is_served(host):
     client, _ = host
     assert client.get("/models", headers=SPOKEN).status_code == 200
+
+
+def test_the_host_generates_from_a_run_it_holds(tmp_path, monkeypatch, sft_run):
+    """Accepted as a job on the same queue, and answered with every output (0054)."""
+    from fastapi.testclient import TestClient
+
+    from strata.catalog import Catalog
+    from strata.modelling.remote.service import build
+
+    _, run = sft_run
+    Catalog.local(tmp_path / "catalog")
+    config = tmp_path / "config.toml"
+    config.write_text(f'[catalog]\nroot = "{tmp_path / "catalog"}"\n')
+    monkeypatch.setenv("STRATA_MODELLING_TOKEN", "t")
+    monkeypatch.setenv("STRATA_CONFIG", str(config))
+    # The host's store is the one the fixture trained into
+    monkeypatch.setenv("STRATA_MODELLING_ROOT", str(tmp_path))
+    client = TestClient(build())
+
+    accepted = client.post(
+        "/generate",
+        headers=SPOKEN,
+        json={
+            "run_id": run.id,
+            "inputs": [{"values": {"subject": "hi"}}],
+            "settings": [{}],
+            "seeds": [2],
+        },
+    )
+    assert accepted.status_code == 202
+    for _ in range(100):
+        job = client.get(f"/jobs/{accepted.json()['id']}", headers=SPOKEN).json()
+        if job["state"] in ("done", "failed"):
+            break
+        time.sleep(0.02)
+
+    assert job["state"] == "done", job.get("error")
+    [out] = job["result"]["outputs"]
+    assert (out["checkpoint"], out["seed"]) == ("epoch-3", 2)
 
 
 def test_a_mismatched_dataset_is_refused_before_the_round_is_accepted(host, tmp_path):

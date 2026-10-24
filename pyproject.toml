@@ -52,8 +52,24 @@ gliner = [
     # transformers 5 converts through protobuf; without it they don't load.
     "protobuf>=4.0",
 ]
+# The text-sft baseline: a 4-bit LoRA on a causal language model, through
+# unsloth. Its own extra because unsloth and its kin are several GB that
+# only a GPU host trains with. docs/adr/0054
+sft = [
+    "strata-modelling[text]",
+    # The Trainer takes the tokenizer as processing_class from 4.46
+    "transformers>=4.46",
+    # The floors are the versions phishnet's templates_train.py ran on
+    "unsloth>=2025.9",
+    "peft>=0.17",
+    "datasets>=3.6",
+    # 4-bit weights and the 8-bit optimiser
+    "bitsandbytes>=0.47",
+    # transformers' Trainer needs it
+    "accelerate>=0.26",
+]
 all = [
-    "strata-modelling[image,text,gliner]",
+    "strata-modelling[image,text,gliner,sft]",
 ]
 # The conformance suite is importable by plugins so they can run the model
 # contract against their own model. It is the only thing here needing pytest.
@@ -92,6 +108,7 @@ text = "strata.modelling.baselines.text.classifier:TextClassifier"
 text-multiclass = "strata.modelling.baselines.text.multiclass:TextMulticlassClassifier"
 text-span = "strata.modelling.baselines.text.tagger:TextSpanTagger"
 gliner-span = "strata.modelling.baselines.text.gliner:GlinerSpanTagger"
+text-sft = "strata.modelling.baselines.text.sft:TextSFT"
 
 
 # What developing this package alone needs beyond its extras. Inside the

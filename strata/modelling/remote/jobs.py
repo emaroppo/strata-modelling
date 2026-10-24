@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from .checks import check_servable
 from .wire import (
+    GenerationResponse,
     PredictionResponse,
     RoundRequest,
     RoundResponse,
@@ -25,7 +26,7 @@ class Job(BaseModel):
     stage: str = "queued"
     done: int = 0
     total: int = 0
-    result: RoundResponse | PredictionResponse | None = None
+    result: RoundResponse | PredictionResponse | GenerationResponse | None = None
     #: The reason it failed, which is the only thing a caller can act on.
     error: str | None = None
 

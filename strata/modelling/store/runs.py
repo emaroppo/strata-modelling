@@ -1,6 +1,10 @@
 """The model catalog: recording runs, and reading their history back."""
 
+import hashlib
+import re
+import shutil
 import socket
+import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,9 +14,10 @@ from sqlalchemy import case, delete, func, insert, select
 from sqlalchemy.engine import Engine
 
 from strata.common import database
+from strata.common.canonical import hash_file
 from strata.common.migrations import require_current, stamp_if_new
 
-from ..requests import Run
+from ..requests import Checkpoint, Run
 from . import tables as t
 from .schema_version import MIGRATIONS
 
@@ -44,6 +49,39 @@ def new_run_id(origin: str | None = None) -> str:
     """
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
     return f"{stamp}-{host_token(origin)}"
+
+
+#: What a run's one checkpoint is called when its model named none. See
+#: ``docs/adr/0054``.
+FINAL = "final"
+
+#: A checkpoint's name becomes a file name, so it is kept to what is safe as
+#: one everywhere.
+CHECKPOINT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+
+
+def now() -> datetime:
+    """Naive UTC, as everything stored here is."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def checkpoint_digest(path: Path) -> str | None:
+    """SHA-256 over what a model's ``save`` wrote, or None where it wrote nothing.
+
+    A file is hashed as its bytes. A directory is hashed over every file
+    beneath it in order of relative path: the path, a NUL, the file's own
+    SHA-256 and a newline each. A checkpoint is named by this as well as
+    by its name (record 0053). See ``docs/adr/0054``.
+    """
+    path = Path(path)
+    if path.is_file():
+        return hash_file(path)[0]
+    if not path.is_dir():
+        return None
+    digest = hashlib.sha256()
+    for name in sorted(p.relative_to(path).as_posix() for p in path.rglob("*") if p.is_file()):
+        digest.update(f"{name}\0{hash_file(path / name)[0]}\n".encode())
+    return digest.hexdigest()
 
 
 class Seen(NamedTuple):
@@ -123,9 +161,39 @@ class RunStore:
         stamp_if_new(engine, MIGRATIONS)
         return cls(engine, root / "checkpoints")
 
-    def checkpoint_path(self, run_id: str) -> Path:
-        # Ids are timestamps and hex, so they are already filename-safe
-        return self.checkpoints / f"run_{run_id}.pt"
+    def checkpoint_path(self, run_id: str, name: str = FINAL) -> Path:
+        """Where a run's checkpoint lives.
+
+        A run's one ``final`` checkpoint is where it always was; a run whose
+        model named its checkpoints keeps them in a directory of its own.
+        See ``docs/adr/0054``.
+        """
+        # Ids are timestamps and hex, and names are checked, so both are
+        # already filename-safe
+        if name == FINAL:
+            return self.checkpoints / f"run_{run_id}.pt"
+        return self.checkpoints / f"run_{run_id}" / name
+
+    def staging(self) -> Path:
+        """A fresh directory for checkpoints saved before their run has an id.
+
+        Beside the checkpoints, so moving one under its run is a rename.
+        :meth:`record` moves them; the caller removes the directory. See
+        ``docs/adr/0054``.
+        """
+        path = self.checkpoints / ".staging" / uuid.uuid4().hex
+        path.mkdir(parents=True)
+        return path
+
+    def checkpoint(self, run_id: str, name: str | None = None) -> Checkpoint | None:
+        """One of a run's checkpoints by name, or its last; None if it has no such one."""
+        query = select(t.checkpoint).where(t.checkpoint.c.run_id == run_id)
+        if name is not None:
+            query = query.where(t.checkpoint.c.name == name)
+        query = query.order_by(t.checkpoint.c.saved_at.desc(), t.checkpoint.c.id.desc()).limit(1)
+        with self.engine.connect() as conn:
+            row = conn.execute(query).first()
+        return _checkpoint(row) if row is not None else None
 
     # ------------------------------------------------------------------
 
@@ -135,19 +203,44 @@ class RunStore:
         metrics: dict[str, float],
         curve: list[tuple[int, dict[str, float]]] | None = None,
         saw: Sequence[Seen | tuple[str, str]] | None = None,
+        checkpoints: Sequence[Checkpoint] | None = None,
     ) -> Run:
-        """Write a completed run, its final metrics, its curve, and what it saw.
+        """Write a completed run, its final metrics, its curve, what it saw and what it kept.
 
         The id is minted here. ``curve`` is ``(epoch, metrics)`` oldest
         first, and ``saw`` is one :class:`Seen` per sample of the manifest
         the run trained from, or a bare ``(checksum, side)`` where the
-        producer said nothing about batches or reviews. Both are written
+        producer said nothing about batches or reviews. All are written
         with the run: a run appears only once it finished, and a round that
         died halfway leaves nothing. See ``docs/adr/0005``.
+
+        ``checkpoints`` are as saved, oldest first, wherever they were
+        written before the run had an id: each is moved under the run here.
+        Omitted, the run's ``checkpoint``, if it names one, is recorded as
+        its one, ``final``. See ``docs/adr/0054``.
         """
         origin = run.origin or socket.gethostname()
         run_id = run.id or new_run_id(origin)
         with self.engine.begin() as conn:
+            if checkpoints is None:
+                # Recorded where it is: the caller put it there
+                kept = (
+                    [
+                        Checkpoint(
+                            name=FINAL,
+                            path=run.checkpoint,
+                            digest=checkpoint_digest(run.checkpoint),
+                            saved_at=now(),
+                        )
+                    ]
+                    if run.checkpoint is not None
+                    else []
+                )
+            else:
+                # Moved inside the run's transaction, so a move that fails
+                # leaves no run
+                kept = self._keep(run_id, checkpoints)
+            last = kept[-1].path if kept else None
             conn.execute(
                 insert(t.run).values(
                     id=run_id,
@@ -161,10 +254,22 @@ class RunStore:
                     model_version=run.model_version,
                     params=run.params,
                     classes=run.classes,
-                    checkpoint=str(run.checkpoint) if run.checkpoint else None,
+                    checkpoint=str(last) if last else None,
                     experiment_id=run.experiment_id,
                 )
             )
+            if kept:
+                conn.execute(
+                    insert(t.checkpoint),
+                    [
+                        {
+                            "run_id": run_id,
+                            **c.model_dump(),
+                            "path": str(c.path) if c.path else None,
+                        }
+                        for c in kept
+                    ],
+                )
             self._write_metrics(conn, run_id, metrics)
             for epoch, reported in curve or ():
                 self._write_metrics(conn, run_id, reported, epoch=epoch)
@@ -174,7 +279,37 @@ class RunStore:
                     insert(t.run_sample),
                     [{"run_id": run_id, **entry._asdict()} for entry in seen],
                 )
-        return run.model_copy(update={"id": run_id, "origin": origin, "metrics": metrics})
+        return run.model_copy(
+            update={
+                "id": run_id,
+                "origin": origin,
+                "metrics": metrics,
+                "checkpoint": last,
+                "checkpoints": kept,
+            }
+        )
+
+    def _keep(self, run_id: str, saved: Sequence[Checkpoint]) -> list[Checkpoint]:
+        """Each checkpoint moved to where its run keeps it, as recorded.
+
+        A checkpoint already where it belongs, or with nothing on disk, is
+        recorded where it is.
+        """
+        names = [c.name for c in saved]
+        twice = sorted({n for n in names if names.count(n) > 1})
+        if twice:
+            raise RunStoreError(f"Checkpoint(s) named more than once: {', '.join(twice)}.")
+        kept = []
+        for c in saved:
+            path = c.path
+            if path is not None and Path(path).exists():
+                destination = self.checkpoint_path(run_id, c.name)
+                if Path(path).resolve() != destination.resolve():
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(path), destination)
+                    path = destination
+            kept.append(c.model_copy(update={"path": path, "saved_at": c.saved_at or now()}))
+        return kept
 
     def curve(self, run_id: str) -> list[tuple[int, dict[str, float]]]:
         """What a run reported as it trained, oldest epoch first.
@@ -203,6 +338,14 @@ class RunStore:
             row = conn.execute(select(t.run).where(t.run.c.id == run_id)).first()
             if row is None:
                 return None
+            kept = [
+                _checkpoint(c)
+                for c in conn.execute(
+                    select(t.checkpoint)
+                    .where(t.checkpoint.c.run_id == run_id)
+                    .order_by(t.checkpoint.c.saved_at, t.checkpoint.c.id)
+                )
+            ]
             # A comprehension, not dict(rows): a result has keys(), so dict()
             # would read it as a mapping and fail
             metrics: dict[str, float] = {  # noqa: C416
@@ -227,6 +370,14 @@ class RunStore:
             params=row.params or {},
             classes=row.classes or [],
             checkpoint=Path(row.checkpoint) if row.checkpoint else None,
+            # A run whose column some older writer set, with no row beside
+            # it, still has its one. docs/adr/0054
+            checkpoints=kept
+            or (
+                [Checkpoint(name=FINAL, path=Path(row.checkpoint), saved_at=row.created_at)]
+                if row.checkpoint
+                else []
+            ),
             metrics=metrics,
         )
 
@@ -368,4 +519,14 @@ class RunStore:
     def delete(self, run_id: int) -> None:
         with self.engine.begin() as conn:
             conn.execute(delete(t.metric).where(t.metric.c.run_id == run_id))
+            conn.execute(delete(t.checkpoint).where(t.checkpoint.c.run_id == run_id))
             conn.execute(delete(t.run).where(t.run.c.id == run_id))
+
+
+def _checkpoint(row) -> Checkpoint:
+    return Checkpoint(
+        name=row.name,
+        path=Path(row.path) if row.path else None,
+        digest=row.digest,
+        saved_at=row.saved_at,
+    )

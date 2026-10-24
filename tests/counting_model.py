@@ -15,10 +15,10 @@ import json
 from pathlib import Path
 
 from strata.contracts import ChoicesPrediction
-from strata.modelling import Model
+from strata.modelling import LabelModel
 
 
-class CountingModel(Model):
+class CountingModel(LabelModel):
     label_type = "classification"
     version = "1"
 
@@ -63,10 +63,10 @@ import json
 from pathlib import Path
 
 from strata.contracts import Span, SpansPrediction
-from strata.modelling import Model
+from strata.modelling import LabelModel
 
 
-class SpanCountingModel(Model):
+class SpanCountingModel(LabelModel):
     label_type = "span"
     version = "1"
 

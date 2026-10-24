@@ -222,18 +222,21 @@ def _predictions(request: EvaluateRequest, context: Context, samples) -> tuple[d
     if store is None:
         raise StageError("Scoring here needs a run store; none was given.")
     cache = PredictionCache.beside(store)
-    found = cache.get(request.run_id, checksums, digests)
+    # The run's last, named once so the lookup and the pass agree. docs/adr/0054
+    checkpoint = cache.last_checkpoint(request.run_id)
+    found = cache.get(request.run_id, checksums, digests, checkpoint=checkpoint)
     todo = [s for s in samples if s.checksum not in found]
     if todo:
         scored = handlers.predict(
             PredictRequest(
                 run_id=request.run_id,
+                checkpoint=checkpoint or None,
                 paths=[Path(request.dataset_dir) / s.path for s in todo],
                 features=[s.features for s in todo],
             ),
             store,
         )
         made = {s.checksum: out.value for s, out in zip(todo, scored, strict=True)}
-        cache.put(request.run_id, made, digests)
+        cache.put(request.run_id, made, digests, checkpoint=checkpoint)
         found.update(made)
     return found, "local"

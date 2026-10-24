@@ -79,6 +79,9 @@ class ImageDataset(Dataset):
         image = self.transform(load_rgb(sample.path, self.draft_size))
         if self.target_fn is None:
             raise RuntimeError("ImageDataset needs a target_fn to train on")
+        if sample.target is None:
+            # Only a media model's examples come without one. docs/adr/0054
+            raise RuntimeError(f"{sample.path} has no target to train on")
         return image, self.target_fn(sample.target.values, self.class_to_idx)
 
 

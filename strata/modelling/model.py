@@ -1,8 +1,11 @@
 """The contract a model implements.
 
-Four methods, and no knowledge of where its data came from. A model is
-handed file paths and values; it never sees a catalog, a database or Label
-Studio. See ``docs/adr/0004``.
+A model makes labels or media, and the two are siblings: a
+:class:`LabelModel` learns a label set and predicts on samples that exist,
+a :class:`MediaModel` learns from samples and generates new ones. Neither
+knows where its data came from. A model is handed file paths and values;
+it never sees a catalog, a database or Label Studio. See ``docs/adr/0004``
+and ``docs/adr/0054``.
 """
 
 from abc import ABC, abstractmethod
@@ -11,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
 
-from strata.contracts import AnyPrediction, AnyValue
+from strata.contracts import AnyPrediction, AnyValue, SampleType
 
 #: What a model reports as it trains: epochs done, epochs in total, and
 #: whatever it knows so far. The metrics are a snapshot rather than a
@@ -26,6 +29,12 @@ EpochReport = Callable[[int, int, dict[str, float]], bool | None]
 #: the answer is the returned value.
 BatchReport = Callable[[int, int], None]
 
+#: Handed to ``finetune``: call it with a name, ``epoch-2``, to keep the
+#: model as it stands as one of the run's checkpoints. Optional, like the
+#: reports: a model that never calls it is kept once, at the end. See
+#: ``docs/adr/0054``.
+SaveCheckpoint = Callable[[str], None]
+
 
 @dataclass(frozen=True)
 class Example:
@@ -37,7 +46,8 @@ class Example:
     """
 
     path: Path
-    target: AnyValue
+    #: None for a :class:`MediaModel`, whose target is the file at ``path``.
+    target: AnyValue | None
     #: What is already known about this sample and may be told to the
     #: model — a species, a coordinate. Empty for a project that declares
     #: none. Plain values rather than :mod:`strata.contracts` ones. See
@@ -46,7 +56,47 @@ class Example:
 
 
 class Model(ABC):
-    """Subclass this and implement the four methods below.
+    """What every trainable model shares. Subclass :class:`LabelModel` or :class:`MediaModel`.
+
+    A model subclassing this directly is refused: it would not say whether
+    it makes labels or media. See ``docs/adr/0054``.
+    """
+
+    #: Features this model cannot predict or generate without. Declared the
+    #: way :attr:`LabelModel.requires_classes` is, and checked the same way,
+    #: before the round. "Cannot predict without", not "cannot train
+    #: without". See ``docs/adr/0011``.
+    requires_features: tuple[str, ...] = ()
+
+    #: Bumped when a change makes existing checkpoints unreadable. A run
+    #: records it, and warm-starting from a checkpoint written by a
+    #: different version is refused. See ``docs/adr/0005``.
+    version: ClassVar[str] = "1"
+
+    def resolved_params(self) -> dict | None:
+        """The parameters as this model used them, its defaults filled in, or None.
+
+        Asked after ``finetune``; the run records what comes back as its
+        params, so a changed default never changes what a recorded run
+        means. They are what the model is rebuilt from to predict or
+        generate, so each must be a constructor argument. None, the
+        default, records the parameters asked for. See ``docs/adr/0054``.
+        """
+        return None
+
+    @abstractmethod
+    def save(self, path: Path) -> None:
+        """Write everything needed to rebuild this model."""
+        ...
+
+    @abstractmethod
+    def load(self, path: Path) -> None:
+        """Restore from :meth:`save`."""
+        ...
+
+
+class LabelModel(Model):
+    """A model that learns a label set and predicts on samples.
 
     Targets and outputs are :mod:`strata.contracts` values rather than any
     storage format, so a model neither knows nor cares that annotations came
@@ -62,17 +112,6 @@ class Model(ABC):
     #: The label set has to declare them, and training refuses if it does
     #: not. Read from the built model, not the class. See ``docs/adr/0014``.
     requires_classes: tuple[str, ...] = ()
-
-    #: Features this model cannot predict without. Declared the way
-    #: :attr:`requires_classes` is, and checked the same way, before the
-    #: round. "Cannot predict without", not "cannot train without". See
-    #: ``docs/adr/0011``.
-    requires_features: tuple[str, ...] = ()
-
-    #: Bumped when a change makes existing checkpoints unreadable. A run
-    #: records it, and warm-starting from a checkpoint written by a
-    #: different version is refused. See ``docs/adr/0005``.
-    version: ClassVar[str] = "1"
 
     def requires_schema(self, schema) -> None:
         """Refuse a label set this model cannot learn from. Raise, or return.
@@ -105,6 +144,14 @@ class Model(ABC):
         model that honours it stops after the epoch it just reported and
         returns its metrics as they stand; a model that ignores the answer
         still conforms. See ``docs/adr/0031``.
+
+        A ``finetune`` may also take ``save_checkpoint``, a
+        :data:`SaveCheckpoint`, as a keyword: calling it with a name keeps
+        the model as it stands as one of the run's checkpoints. Not in this
+        signature, so a model written before it still overrides this one
+        cleanly; the handler passes it only to a ``finetune`` that accepts
+        it. A model that never calls it is kept once, at the end. See
+        ``docs/adr/0054``.
         """
         ...
 
@@ -128,12 +175,70 @@ class Model(ABC):
         """
         ...
 
+
+@dataclass(frozen=True)
+class GenerationInput:
+    """What one output is generated from.
+
+    ``values`` fill the prompt template, by the input fields' names.
+    ``samples`` are the samples the model is given, by the role each fills
+    and in order within a role: the text to summarise, the images to
+    combine. Empty for a model that writes from values alone. See
+    ``docs/adr/0053`` and ``docs/adr/0054``.
+    """
+
+    values: dict = field(default_factory=dict)
+    samples: dict[str, list[Path]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Generated:
+    """One output, as the model made it. Not yet a sample: the caller commits it.
+
+    ``ended`` is whether it stopped on its own rather than at a limit, or
+    None for a media with no such notion. See ``docs/adr/0054``.
+    """
+
+    data: bytes
+    ended: bool | None = None
+
+
+class MediaModel(Model):
+    """A model that learns from samples and generates new ones.
+
+    Its training examples are samples of the type it ``trains_on``: the
+    file is the target, the features its input. What it generates becomes
+    generated media in the catalog, never predictions. See
+    ``docs/adr/0053`` and ``docs/adr/0054``.
+    """
+
+    #: The sample type it learns from; its subtypes are accepted too.
+    #: Checked against every manifest sample's type before training.
+    trains_on: ClassVar[type[SampleType] | None] = None
+
     @abstractmethod
-    def save(self, path: Path) -> None:
-        """Write everything needed to rebuild this model."""
+    def finetune(
+        self,
+        train: list[Example],
+        val: list[Example] | None = None,
+        on_epoch: "EpochReport | None" = None,
+        save_checkpoint: "SaveCheckpoint | None" = None,
+    ) -> dict[str, float]:
+        """Train, and return metrics. As :meth:`LabelModel.finetune`, without classes."""
         ...
 
     @abstractmethod
-    def load(self, path: Path) -> None:
-        """Restore from :meth:`save`."""
+    def generate(
+        self,
+        inputs: list[GenerationInput],
+        settings: list[dict],
+        seeds: list[int],
+        on_batch: "BatchReport | None" = None,
+    ) -> list[Generated]:
+        """One output per input, in order.
+
+        ``settings`` and ``seeds`` are positional against ``inputs``: one
+        run can sweep a setting, and each output says which made it. See
+        ``docs/adr/0054``.
+        """
         ...

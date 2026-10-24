@@ -1,9 +1,9 @@
 """Predictions already made, so nobody pays for them twice.
 
-Keyed on the run, the sample's checksum and a digest of its features;
-nothing is ever invalidated. Lives beside the runs. Holds whatever a
-model produced and reads it back through the discriminator. See
-``docs/adr/0006``.
+Keyed on the run, the checkpoint, the sample's checksum and a digest of
+its features; nothing is ever invalidated. Lives beside the runs. Holds
+whatever a model produced and reads it back through the discriminator. See
+``docs/adr/0006`` and ``docs/adr/0054``.
 """
 
 from collections.abc import Mapping
@@ -47,25 +47,44 @@ class PredictionCache:
         """The cache belonging to a run store."""
         return cls(store.engine)
 
+    def last_checkpoint(self, run_id: str) -> str:
+        """The name of a run's last checkpoint, which a caller naming none means.
+
+        Empty for a run that kept none, or that this store does not hold.
+        See ``docs/adr/0054``.
+        """
+        with self.engine.connect() as conn:
+            name = conn.execute(
+                select(t.checkpoint.c.name)
+                .where(t.checkpoint.c.run_id == run_id)
+                .order_by(t.checkpoint.c.saved_at.desc(), t.checkpoint.c.id.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+        return name or ""
+
     def get(
         self,
         run_id: str,
         checksums: list[str],
         digests: dict[str, str] | None = None,
+        checkpoint: str | None = None,
     ) -> dict[str, AnyPrediction]:
-        """Whatever of ``checksums`` this run has already answered.
+        """Whatever of ``checksums`` this run's checkpoint has already answered.
 
         ``digests`` says what the model was told about each sample, by
         :func:`strata.contracts.feature_digest`. A checksum whose features
         have changed since it was scored simply misses (``docs/adr/0006``).
 
         Omitted, every lookup uses the empty digest, which is what a
-        project declaring no features writes.
+        project declaring no features writes. ``checkpoint`` is a name; None
+        is the run's last (``docs/adr/0054``).
         """
         found: dict[str, AnyPrediction] = {}
         if not checksums:
             return found
         digests = digests or {}
+        if checkpoint is None:
+            checkpoint = self.last_checkpoint(run_id)
         with self.engine.connect() as conn:
             for chunk in _chunks(list(checksums), 500):
                 rows = conn.execute(
@@ -75,6 +94,7 @@ class PredictionCache:
                         t.prediction.c.value,
                     ).where(
                         t.prediction.c.run_id == run_id,
+                        t.prediction.c.checkpoint == checkpoint,
                         t.prediction.c.checksum.in_(chunk),
                     )
                 )
@@ -89,8 +109,12 @@ class PredictionCache:
         run_id: str,
         made: Mapping[str, Prediction],
         digests: dict[str, str] | None = None,
+        checkpoint: str | None = None,
     ) -> int:
-        """Record what a run said. Rewriting an entry is a no-op by construction."""
+        """Record what a run's checkpoint said. Rewriting an entry is a no-op by construction.
+
+        ``checkpoint`` is a name; None is the run's last, as for :meth:`get`.
+        """
         if not made:
             return 0
         wrong = {
@@ -107,9 +131,12 @@ class PredictionCache:
                 f"value — serialises happily and reads back with its "
                 f"confidences gone rather than failing."
             )
+        if checkpoint is None:
+            checkpoint = self.last_checkpoint(run_id)
         rows = [
             {
                 "run_id": run_id,
+                "checkpoint": checkpoint,
                 "checksum": checksum,
                 "feature_digest": (digests or {}).get(checksum, ""),
                 "value": value.model_dump_json(),
@@ -121,7 +148,7 @@ class PredictionCache:
                 # A second write of the same key carries the same value. docs/adr/0006
                 conn.execute(
                     sqlite_insert(t.prediction).on_conflict_do_nothing(
-                        index_elements=["run_id", "checksum", "feature_digest"]
+                        index_elements=["run_id", "checkpoint", "checksum", "feature_digest"]
                     ),
                     chunk,
                 )

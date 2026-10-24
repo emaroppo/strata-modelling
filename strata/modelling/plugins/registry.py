@@ -3,6 +3,9 @@
 Two paths, and the name says which. A short name resolves through the
 ``strata.models`` entry point group; anything containing ``:`` is a direct
 reference, ``module:Class`` or ``file.py:Class``. See ``docs/adr/0034``.
+
+What resolves is a :class:`LabelModel` or a :class:`MediaModel`; a class
+subclassing :class:`Model` directly is refused (``docs/adr/0054``).
 """
 
 import hashlib
@@ -14,10 +17,13 @@ from pathlib import Path
 
 from strata.common import plugins
 
-from ..model import Model
+from ..model import LabelModel, MediaModel, Model
 
 #: Where an installed distribution advertises the models it provides.
 ENTRY_POINT_GROUP = "strata.models"
+
+#: The contract's own classes, which a plugin's declarations are read past.
+_CONTRACT = (Model, LabelModel, MediaModel)
 
 
 class ModelError(Exception):
@@ -57,7 +63,30 @@ def resolve(name: str, root: Path | None = None) -> type[Model]:
     """
     found = _from_registry(name) if ":" not in name else _from_reference(name, root)
     _refuse_the_old_name(found, name)
+    _refuse_a_bare_model(found, name)
     return found
+
+
+def _refuse_a_bare_model(model_cls: type, name: str) -> None:
+    """Refuse a class that is neither a ``LabelModel`` nor a ``MediaModel``.
+
+    One subclassing ``Model`` directly would otherwise be read quietly as a
+    label model, and that fallback would stay alive for as long as any old
+    plugin exists. See ``docs/adr/0054``.
+    """
+    if isinstance(model_cls, type) and issubclass(model_cls, (LabelModel, MediaModel)):
+        return
+    if isinstance(model_cls, type) and issubclass(model_cls, Model):
+        raise ModelError(
+            f"Model {name!r} subclasses `Model`, which no longer says what it makes. "
+            f"One that learns a label set and predicts is a `LabelModel`: write "
+            f"`class {model_cls.__name__}(LabelModel)`. One that learns from samples "
+            f"and generates new ones is a `MediaModel`."
+        )
+    raise ModelError(
+        f"{name!r} is not a model: a model subclasses `LabelModel` or `MediaModel` "
+        f"from strata.modelling."
+    )
 
 
 def _refuse_the_old_name(model_cls: type, name: str) -> None:
@@ -66,7 +95,9 @@ def _refuse_the_old_name(model_cls: type, name: str) -> None:
     Otherwise it inherits the default label type and is refused later as a
     mismatch, or worse, accepted as a classifier. See ``docs/adr/0041``.
     """
-    own = [c for c in model_cls.__mro__ if c is not Model and issubclass(c, Model)]
+    if not isinstance(model_cls, type):
+        return
+    own = [c for c in model_cls.__mro__ if c not in _CONTRACT and issubclass(c, Model)]
     if any("task" in vars(c) for c in own) and not any("label_type" in vars(c) for c in own):
         raise ModelError(
             f"Model {name!r} declares `task`, which is now `label_type`: the "

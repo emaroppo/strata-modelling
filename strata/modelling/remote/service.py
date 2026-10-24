@@ -7,9 +7,10 @@ from ..plugins.registry import available
 from ..store.runs import RunStore
 from .checks import check_catalog, check_dataset, check_features
 from .jobs import BusyError, Job, Jobs
-from .rounds import metrics_of, run_prediction, run_round
+from .rounds import metrics_of, run_generation, run_prediction, run_round
 from .wire import (
     PROTOCOL,
+    GenerationRequest,
     PredictionRequest,
     RoundRequest,
     RoundResponse,
@@ -139,6 +140,27 @@ def build():
 
         def run_it(req, report):
             return run_prediction(req, catalog_for(), store, cache_dir, report)
+
+        try:
+            return jobs.submit(request, runner=run_it)
+        except BusyError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from None
+        except ServiceError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
+
+    @app.post("/generate", dependencies=[Depends(authorise), Depends(spoken)], status_code=202)
+    def generate_(request: GenerationRequest) -> Job:
+        """Accept a generation job. Same queue as training (``docs/adr/0054``)."""
+        if cache is None and any(i.samples for i in request.inputs):
+            raise HTTPException(
+                status_code=400,
+                detail="No $STRATA_BLOBS_CACHE, so this host has nowhere to put "
+                "the samples the inputs name.",
+            )
+        cache_dir = cache or root / "blobs"
+
+        def run_it(req, report):
+            return run_generation(req, catalog_for(), store, cache_dir, report)
 
         try:
             return jobs.submit(request, runner=run_it)

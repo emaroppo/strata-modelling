@@ -10,13 +10,13 @@ from torchvision import transforms
 
 from strata.contracts import AnyPrediction, ChoicesPrediction
 
-from ...model import BatchReport, Example, Model
+from ...model import BatchReport, Example, LabelModel
 from .._shared import pick_device, threshold_choices
 from . import head, loop
 from .data import ImageDataset, InferenceDataset, LetterboxSquash
 
 
-class MultiLabelClassifier(Model):
+class MultiLabelClassifier(LabelModel):
     """ConvNeXt V2 Base fine-tuned multi-label classifier.
 
     Uses timm's ``convnextv2_base`` with ImageNet-22k pre-trained weights.

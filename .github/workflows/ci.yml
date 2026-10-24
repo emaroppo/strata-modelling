@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Weekly, for what no change here would show: with no lock, a new unsloth
+  # or transformers can break the sft job on its own.
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
 
 # The strata packages are not on an index, so each job first builds the
 # wheels of the ones this package depends on from their repositories
@@ -41,9 +46,10 @@ jobs:
   # with every extra installed, so an optional framework is a real import
   # rather than a missing one. Pinned to the oldest supported Python: with
   # no lock, uv takes the newest one, and torch ships wheels for a new
-  # Python months after it is released.
+  # Python months after it is released. Every extra but sft, which is
+  # several GB more and has a job of its own, below.
   tests-extras:
-    name: tests (--extra all)
+    name: tests (every extra but sft)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,11 +57,55 @@ jobs:
         with:
           enable-cache: true
       - run: .github/sibling-wheels.sh contracts common evaluation catalog
-      - run: uv sync --no-cache --python 3.13 --find-links dist --group dev --extra all --extra service
+      - run: uv sync --no-cache --python 3.13 --find-links dist --group dev --extra image --extra text --extra gliner --extra service
       - run: uv run --no-sync python -c "import strata.modelling.baselines.image"
       - run: uv run --no-sync python -c "import strata.modelling.baselines.text"
       - run: uv run --no-sync pytest -q
       - run: uv run --no-sync pyright
+
+  # Whether anything the sft job covers changed. A push or pull request
+  # that touches none of it skips that job.
+  changes:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      sft: ${{ steps.filter.outputs.sft }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            sft:
+              - "strata/modelling/baselines/text/**"
+              - "strata/modelling/model.py"
+              - "strata/modelling/handlers.py"
+              - "tests/test_text_sft.py"
+              - "pyproject.toml"
+              - ".github/**"
+
+  # The text-sft baseline with unsloth and its kin installed, so its imports
+  # are real ones. Only when something it depends on changed, weekly, or by
+  # hand: the extra is several GB. No GPU here, so the real-model test
+  # skips; that one is run on a GPU host. docs/adr/0054
+  tests-sft:
+    name: tests (--extra sft)
+    needs: changes
+    if: >-
+      always() && (github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch'
+      || needs.changes.outputs.sft == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: .github/sibling-wheels.sh contracts common evaluation catalog
+      - run: uv sync --no-cache --python 3.13 --find-links dist --group dev --extra sft
+      - run: uv run --no-sync python -c "import strata.modelling.baselines.text.sft"
+      - run: uv run --no-sync pytest -q tests/test_text_sft.py
+      - run: uv run --no-sync pyright strata/modelling/baselines/text/sft.py strata/modelling/baselines/text/sft_data.py
 
   # What keeps the package publishable on its own: its wheel is built and
   # installed alone into a fresh environment, with only what it declares,

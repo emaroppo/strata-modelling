@@ -27,7 +27,7 @@ import torch
 
 from strata.contracts import Span, Spans, SpansPrediction
 
-from ...model import Example, Model
+from ...model import Example, LabelModel
 from .._shared import pick_device, predict_progress, seed_everything
 from .bio import merge_windows
 from .spans import span_scores
@@ -135,7 +135,7 @@ def to_training(
     return records, dropped + len(placed) - kept
 
 
-class GlinerSpanTagger(Model):
+class GlinerSpanTagger(LabelModel):
     """GLiNER over a document's text, zero-shot or fine-tuned."""
 
     label_type = "span"

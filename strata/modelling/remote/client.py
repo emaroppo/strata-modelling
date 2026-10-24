@@ -11,7 +11,7 @@ import time
 import urllib.error
 import urllib.request
 
-from .wire import PROTOCOL, PROTOCOL_HEADER, PredictionRequest, RoundRequest
+from .wire import PROTOCOL, PROTOCOL_HEADER, GenerationRequest, PredictionRequest, RoundRequest
 
 #: The timeout for a call that names none. Every call names one, since a
 #: round is submitted and polled rather than held open (``docs/adr/0007``).
@@ -114,6 +114,14 @@ class Trainer:
         Checksums rather than paths. See ``docs/adr/0007``.
         """
         return self._call("/predict", request.model_dump(mode="json"), timeout=120)
+
+    def generate(self, request: GenerationRequest) -> dict:
+        """Ask for outputs. Returns the job; the work runs after this returns.
+
+        Samples by checksum rather than path, as for :meth:`predict`. See
+        ``docs/adr/0054``.
+        """
+        return self._call("/generate", request.model_dump(mode="json"), timeout=120)
 
     def run(self, run_id: int) -> dict | None:
         """One run there, or None. Its numbering, not this machine's."""

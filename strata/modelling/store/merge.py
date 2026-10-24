@@ -3,14 +3,15 @@
 A project keeps runs beside its checkpoints and a modelling host keeps its
 own; this puts a history split across both back together. Checkpoints are
 left behind unless asked for, and a run whose checkpoint did not come has
-its column cleared. See ``docs/adr/0005``.
+its column cleared. Every checkpoint a run kept is recorded either way, its
+path cleared where its file did not come. See ``docs/adr/0005`` and
+``docs/adr/0054``.
 """
 
 from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from sqlalchemy import insert, select
 
@@ -101,25 +102,43 @@ def merge_stores(
             report.orphaned.append(row.id)
             values["parent_run_id"] = None
 
-        if checkpoints and row.checkpoint:
-            source_file = Path(row.checkpoint)
-            if source_file.exists():
-                destination = target.checkpoint_path(row.id)
+        # Every checkpoint the run kept, its record copied whether or not its
+        # file comes too. docs/adr/0054
+        kept = []
+        held = source.get(row.id)
+        for saved in held.checkpoints if held is not None else []:
+            entry = {
+                "name": saved.name,
+                "digest": saved.digest,
+                # Never null in the table; a run read without one is from
+                # before it, and is dated by the run
+                "saved_at": saved.saved_at or row.created_at,
+            }
+            source_file = saved.path
+            if checkpoints and source_file is not None and source_file.exists():
+                destination = target.checkpoint_path(row.id, saved.name)
                 report.checkpoints += 1
                 if not dry_run:
                     destination.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(source_file, destination)
-                values["checkpoint"] = str(destination)
+                    if source_file.is_dir():
+                        shutil.copytree(source_file, destination)
+                    else:
+                        shutil.copy2(source_file, destination)
+                entry["path"] = str(destination)
             else:
-                # Asked for and not there: the column is cleared. docs/adr/0005
-                values["checkpoint"] = None
-        else:
-            values["checkpoint"] = None
+                # Not asked for, or asked for and not there: the path is
+                # cleared. docs/adr/0005
+                entry["path"] = None
+            kept.append(entry)
+        # The run's column names its last, as it did where it came from
+        values["checkpoint"] = kept[-1]["path"] if kept else None
 
         report.runs += 1
         if not dry_run:
             with target.engine.begin() as conn:
                 conn.execute(insert(t.run).values(**values))
+                if kept:
+                    conn.execute(insert(t.checkpoint), [{**c, "run_id": row.id} for c in kept])
 
         report.metrics += _copy(
             source, target, t.metric, t.metric.c.run_id, row.id, dry_run, drop_id=True

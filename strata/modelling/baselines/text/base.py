@@ -7,12 +7,12 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from ...model import Example, Model
+from ...model import Example, LabelModel
 from .._shared import console, epoch_progress, pick_device, predict_progress, seed_everything
 from .windows import DEFAULT_ENCODER, WindowDataset, Windowed, read_text
 
 
-class TransformerBase(Windowed, Model):
+class TransformerBase(Windowed, LabelModel):
     """Shared training loop for the text heads."""
 
     #: Whether this head has to combine several windows into one answer for

@@ -118,6 +118,23 @@ def test_scoring_sends_the_hosts_own_request(sent):
     assert sent["body"] == request.model_dump(mode="json")
 
 
+def test_generating_sends_the_hosts_own_request(sent):
+    from strata.modelling.remote.wire import GenerationInputRef, GenerationRequest
+
+    request = GenerationRequest(
+        run_id="r",
+        checkpoint="epoch-2",
+        inputs=[GenerationInputRef(values={"subject": "hi"}, samples={"source": ["a" * 64]})],
+        settings=[{"temperature": 0.7}],
+        seeds=[3],
+    )
+    Trainer("http://gpu:8082", "t").generate(request)
+    assert sent["url"] == "http://gpu:8082/generate"
+    assert sent["body"] == request.model_dump(mode="json")
+    # Submitted and polled, like a round
+    assert sent["timeout"] <= 120
+
+
 def test_the_hosts_reason_is_what_surfaces(monkeypatch):
     def refuse(request, timeout=None):
         if _healthz(request):

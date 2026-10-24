@@ -29,10 +29,12 @@ with a message naming the extra.
 
 A model implements four methods and knows nothing about where its data
 came from. It is handed file paths and values, never a catalog, a database
-or Label Studio.
+or Label Studio. One that learns a label set and predicts is a `LabelModel`;
+one that learns from samples and generates new ones is a `MediaModel`
+(`docs/adr/0054`). A class subclassing `Model` directly is refused.
 
 ```python
-class MyModel(Model):
+class MyModel(LabelModel):
     label_type = "classification"
 
     def finetune(self, train, classes, val=None, on_epoch=None): ...

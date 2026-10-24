@@ -4,13 +4,15 @@ from pydantic import BaseModel, Field
 
 from strata.contracts import AnyPrediction
 
-from ..requests import Run
+from ..requests import GeneratedOutput, Run
 
 #: What this release says over the wire. Goes up only when an older side
 #: would misread a newer one (``docs/adr/0007``).
 #:
 #: 2: a round may carry the split as the caller realised it (``docs/adr/0025``).
-PROTOCOL = 2
+#: 3: a prediction may name a checkpoint, which an older host would ignore
+#: and answer from the run's last; and a run generates (``docs/adr/0054``).
+PROTOCOL = 3
 
 
 #: The header every request but ``/healthz`` names it in.
@@ -92,6 +94,9 @@ class PredictionRequest(BaseModel):
     """
 
     run_id: str
+    #: Which of the run's checkpoints, by name. None is its last. See
+    #: ``docs/adr/0054``.
+    checkpoint: str | None = None
     checksums: list[str] = Field(default_factory=list)
     #: What the model is to be told about each sample, by checksum. Keyed
     #: rather than positional (``docs/adr/0007``).
@@ -104,3 +109,34 @@ class PredictionResponse(BaseModel):
     predictions: dict[str, AnyPrediction] = Field(default_factory=dict)
     #: Asked about but not in this catalog.
     unknown: list[str] = Field(default_factory=list)
+
+
+class GenerationInputRef(BaseModel):
+    """One input as it travels: values, and samples by checksum rather than path.
+
+    The host fetches the samples from its own catalog, as it does to score
+    them. See ``docs/adr/0007`` and ``docs/adr/0054``.
+    """
+
+    values: dict = Field(default_factory=dict)
+    #: Checksums by the role each sample fills, in order within a role.
+    samples: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class GenerationRequest(BaseModel):
+    """Generate from a media model's run this host holds.
+
+    Positional, as :class:`strata.modelling.requests.GenerateRequest` is:
+    the nth output from the nth input, setting and seed.
+    """
+
+    run_id: str
+    checkpoint: str | None = None
+    inputs: list[GenerationInputRef] = Field(default_factory=list)
+    settings: list[dict] = Field(default_factory=list)
+    seeds: list[int] = Field(default_factory=list)
+
+
+class GenerationResponse(BaseModel):
+    #: One per input, in order. Nothing is written on this host.
+    outputs: list[GeneratedOutput] = Field(default_factory=list)

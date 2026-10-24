@@ -5,7 +5,15 @@ import re
 import pytest
 from counting_model import COUNTING_MODEL
 
-from strata.modelling import ENTRY_POINT_GROUP, Model, ModelError, available, resolve
+from strata.modelling import (
+    ENTRY_POINT_GROUP,
+    LabelModel,
+    MediaModel,
+    Model,
+    ModelError,
+    available,
+    resolve,
+)
 
 
 def test_a_ref_loads_a_class_from_a_file(tmp_path):
@@ -22,7 +30,7 @@ def test_a_file_ref_is_anchored_to_the_root(tmp_path):
 
 
 def test_a_module_ref_imports_an_installed_class():
-    assert resolve("strata.modelling.model:Model") is Model
+    assert resolve("strata.modelling.model:LabelModel") is LabelModel
 
 
 def test_a_missing_file_is_an_error(tmp_path):
@@ -130,8 +138,8 @@ def test_a_model_still_declaring_task_is_refused_by_name(tmp_path):
     mismatch it cannot explain, or accepted as a classifier.
     """
     (tmp_path / "old.py").write_text(
-        "from strata.modelling import Model\n\n\n"
-        "class Old(Model):\n"
+        "from strata.modelling import LabelModel\n\n\n"
+        "class Old(LabelModel):\n"
         '    task = "span"\n\n'
         "    def finetune(self, train, classes, val=None, on_epoch=None): return {}\n"
         "    def predict(self, paths, on_batch=None, *, features=None): return []\n"
@@ -140,3 +148,33 @@ def test_a_model_still_declaring_task_is_refused_by_name(tmp_path):
     )
     with pytest.raises(ModelError, match="`task`, which is now `label_type`"):
         resolve("old.py:Old", root=tmp_path)
+
+
+def test_a_model_subclassing_model_directly_is_refused_with_the_fix(tmp_path):
+    """It would not say whether it makes labels or media (docs/adr/0054).
+
+    Accepted, it would be read quietly as a label model, and that fallback
+    would live as long as any old plugin does.
+    """
+    (tmp_path / "bare.py").write_text(
+        "from strata.modelling import Model\n\n\n"
+        "class Bare(Model):\n"
+        '    label_type = "classification"\n\n'
+        "    def finetune(self, train, classes, val=None, on_epoch=None): return {}\n"
+        "    def predict(self, paths, on_batch=None, *, features=None): return []\n"
+        "    def save(self, path): pass\n"
+        "    def load(self, path): pass\n"
+    )
+    with pytest.raises(ModelError, match=re.escape("`class Bare(LabelModel)`")):
+        resolve("bare.py:Bare", root=tmp_path)
+
+
+def test_a_class_that_is_no_model_at_all_is_refused(tmp_path):
+    (tmp_path / "plain.py").write_text("class Plain:\n    pass\n")
+    with pytest.raises(ModelError, match="is not a model"):
+        resolve("plain.py:Plain", root=tmp_path)
+
+
+def test_both_siblings_resolve(tmp_path):
+    assert issubclass(resolve("strata.modelling.model:LabelModel"), Model)
+    assert resolve("strata.modelling.model:MediaModel") is MediaModel

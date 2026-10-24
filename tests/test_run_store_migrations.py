@@ -89,3 +89,78 @@ def test_cached_spans_written_with_one_label_are_rewritten(url, monkeypatch):
         rows = dict(conn.execute(text("SELECT checksum, value FROM prediction")).all())
     assert SpansPrediction.model_validate_json(rows["a"]).values[0].labels == ["PER"]
     assert json.loads(rows["b"]) == choices
+
+
+def test_an_existing_run_gets_its_one_checkpoint_and_its_predictions_keep_working(
+    url, tmp_path, monkeypatch
+):
+    """Every run already recorded keeps its checkpoint, named final, and its cache rows.
+
+    See ``docs/adr/0054``.
+    """
+    import hashlib
+
+    from sqlalchemy import text
+
+    from strata.contracts import ChoicesPrediction
+    from strata.modelling import PredictionCache
+
+    monkeypatch.setenv("STRATA_RUNS_URL", url)
+    config = Config()
+    config.set_main_option("script_location", str(MIGRATIONS))
+    config.set_main_option("sqlalchemy.url", url)
+    command.upgrade(config, "c7a2e91f5b04")
+
+    weights = tmp_path / "checkpoints" / "run_r.pt"
+    weights.parent.mkdir()
+    weights.write_bytes(b"weights")
+    choices = ChoicesPrediction(values=["cat"], confidences=[0.5]).model_dump_json()
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        for run_id, checkpoint in (
+            ("r", str(weights)),
+            ("gone", str(tmp_path / "never-written.pt")),
+            ("none", None),
+        ):
+            conn.execute(
+                text(
+                    "INSERT INTO run (id, dataset, label_set, model, model_version, classes, "
+                    "checkpoint) VALUES (:id, 'd', 's', 'm', '1', '[]', :c)"
+                ),
+                {"id": run_id, "c": checkpoint},
+            )
+        for run_id in ("r", "none", "unknown"):
+            conn.execute(
+                text(
+                    "INSERT INTO prediction (run_id, checksum, feature_digest, value) "
+                    "VALUES (:r, 'a', '', :v)"
+                ),
+                {"r": run_id, "v": choices},
+            )
+
+    command.upgrade(config, "head")
+
+    with engine.connect() as conn:
+        kept = conn.execute(text("SELECT run_id, name, path, digest FROM checkpoint")).all()
+        cached = dict(conn.execute(text("SELECT run_id, checkpoint FROM prediction")).all())
+    assert sorted(kept) == [
+        ("gone", "final", str(tmp_path / "never-written.pt"), None),
+        ("r", "final", str(weights), hashlib.sha256(b"weights").hexdigest()),
+    ]
+    # A run that kept none, or that this store does not hold, keys on no name
+    assert cached == {"r": "final", "none": "", "unknown": ""}
+
+    store = RunStore.open(tmp_path)
+    assert [c.name for c in store.get("r").checkpoints] == ["final"]
+    assert store.get("r").checkpoint == weights
+    cache = PredictionCache.beside(store)
+    assert cache.get("r", ["a"])["a"].values == ["cat"]
+    assert cache.get("none", ["a"])["a"].values == ["cat"]
+
+    # And back, with the column still naming the one checkpoint
+    command.downgrade(config, "c7a2e91f5b04")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM prediction")).scalar_one() == 3
+        assert conn.execute(text("SELECT checkpoint FROM run WHERE id = 'r'")).scalar_one() == str(
+            weights
+        )

@@ -11,15 +11,26 @@ to the exact samples and annotations that produced it.
 
 The training core takes a directory and a manifest, nothing else
 (``docs/adr/0004``); the service layer materialises before invoking it.
-Runs are a chain and carry the class list as trained (``docs/adr/0005``).
-Predictions are returned by the core, not written; ``PredictionCache`` is
-that persistence (``docs/adr/0006``).
+Runs are a chain and carry the class list as trained (``docs/adr/0005``),
+and every checkpoint they kept (``docs/adr/0054``). Predictions are returned
+by the core, not written; ``PredictionCache`` is that persistence
+(``docs/adr/0006``). A model makes labels or media: a ``LabelModel``
+predicts, a ``MediaModel`` generates, and generated outputs are returned
+for the caller to commit (``docs/adr/0054``).
 """
 
-from .handlers import TrainingError, examples, predict, train
-from .model import Example, Model
+from .handlers import TrainingError, examples, generate, predict, train
+from .model import Example, Generated, GenerationInput, LabelModel, MediaModel, Model
 from .plugins.registry import ENTRY_POINT_GROUP, ModelError, absolute, available, resolve
-from .requests import PredictRequest, Run, ScoredPath, TrainRequest
+from .requests import (
+    Checkpoint,
+    GeneratedOutput,
+    GenerateRequest,
+    PredictRequest,
+    Run,
+    ScoredPath,
+    TrainRequest,
+)
 from .store.merge import StoreMergeError, StoreMergeReport, merge_stores
 from .store.predictions import PredictionCache
 from .store.runs import RunStore, RunStoreError, RunStoreMissing, Seen, Unchecked
@@ -29,7 +40,14 @@ PUBLIC_MODULES = frozenset({"stages", "remote.client", "remote.wire", "plugins.r
 
 __all__ = [
     "ENTRY_POINT_GROUP",
+    "Checkpoint",
     "Example",
+    "GenerateRequest",
+    "Generated",
+    "GeneratedOutput",
+    "GenerationInput",
+    "LabelModel",
+    "MediaModel",
     "Model",
     "ModelError",
     "PredictRequest",
@@ -48,6 +66,7 @@ __all__ = [
     "absolute",
     "available",
     "examples",
+    "generate",
     "merge_stores",
     "predict",
     "resolve",

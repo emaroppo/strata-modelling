@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     func,
 )
 
@@ -51,6 +52,8 @@ run = Table(
     # The class list *as trained*, by position: what the checkpoint encodes.
     # See docs/adr/0005.
     Column("classes", JSON, nullable=False),
+    # The run's last checkpoint, kept beside the table of all of them so a
+    # reader that wants only that one need not join. docs/adr/0054
     Column("checkpoint", Text, nullable=True),
     # Which experiment file asked for this run, by the file's hash. Null for
     # a run nothing orchestrated. The trial is in the ledger, not on the run.
@@ -78,6 +81,27 @@ run_sample = Table(
 )
 
 
+#: Every checkpoint a run kept, oldest first: one per call a model made to
+#: ``save_checkpoint``, or one named ``final`` for a model that made none.
+#: See docs/adr/0005 and docs/adr/0054.
+checkpoint = Table(
+    "checkpoint",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("run_id", ForeignKey("run.id", ondelete="CASCADE"), nullable=False),
+    # As the model named it, ``epoch-2``; unique within the run.
+    Column("name", String(64), nullable=False),
+    # Null where the file is not in this store: a run merged in without its
+    # checkpoints keeps the record of what it saved. docs/adr/0005
+    Column("path", Text, nullable=True),
+    # SHA-256 over what the model wrote, by checkpoint_digest. Null where
+    # it wrote nothing to hash.
+    Column("digest", String(64), nullable=True),
+    Column("saved_at", DateTime, nullable=False),
+    UniqueConstraint("run_id", "name", name="uq_checkpoint_run_name"),
+)
+
+
 metric = Table(
     "metric",
     metadata,
@@ -92,12 +116,15 @@ metric = Table(
 
 
 #: What a run said about a sample, kept so it need not be asked twice.
-#: Nothing here is ever invalidated: the key names every input. See
-#: docs/adr/0006.
+#: Nothing here is ever invalidated: the key names every input, the
+#: checkpoint among them. See docs/adr/0006 and docs/adr/0054.
 prediction = Table(
     "prediction",
     metadata,
     Column("run_id", String(40), primary_key=True),
+    # Which of the run's checkpoints, by name. Empty for a run that kept
+    # none. docs/adr/0054
+    Column("checkpoint", String(64), primary_key=True, server_default=""),
     Column("checksum", String(64), primary_key=True),
     # The third input: what the model was told about the sample. Empty
     # where a project declares no features.

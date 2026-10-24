@@ -1,18 +1,25 @@
-"""Running a round or a scoring pass on this host: materialise, train, record; fetch, predict."""
+"""Running a round, a scoring pass or a generation on this host.
+
+Materialise, train, record; fetch, predict; fetch, generate.
+"""
 
 from pathlib import Path
 
 from strata.contracts import AnyPrediction, feature_digest
 
 from ..handlers import train as run_train
-from ..requests import PredictRequest, TrainRequest
+from ..model import GenerationInput
+from ..requests import GenerateRequest, PredictRequest, TrainRequest
 from ..store.runs import RunStore
 from .checks import check_catalog, check_dataset, check_features, check_servable, check_split
 from .wire import (
+    GenerationRequest,
+    GenerationResponse,
     PredictionRequest,
     PredictionResponse,
     RoundRequest,
     RoundResponse,
+    ServiceError,
 )
 
 
@@ -119,10 +126,16 @@ def run_prediction(
 
     # Kept beside the runs. docs/adr/0006
     known = PredictionCache.beside(store)
-    # Keyed on the same three inputs the caller's cache is; the digest is
-    # computed here from what arrived rather than sent. docs/adr/0006
+    # Keyed on the same inputs the caller's cache is; the digest is computed
+    # here from what arrived rather than sent. docs/adr/0006
     digests = {c: feature_digest(request.features.get(c, {})) for c in request.checksums}
-    already = known.get(request.run_id, request.checksums, digests)
+    # Named once, so the lookup and the pass agree on it. docs/adr/0054
+    checkpoint = (
+        request.checkpoint
+        if request.checkpoint is not None
+        else known.last_checkpoint(request.run_id)
+    )
+    already = known.get(request.run_id, request.checksums, digests, checkpoint=checkpoint)
     wanted = [c for c in request.checksums if c not in already]
 
     def fetching(done: int, total: int) -> None:
@@ -145,6 +158,7 @@ def run_prediction(
         outputs = run_predict(
             PredictRequest(
                 run_id=request.run_id,
+                checkpoint=checkpoint or None,
                 paths=[paths[c] for c in ordered],
                 features=[request.features.get(c, {}) for c in ordered],
             ),
@@ -152,9 +166,65 @@ def run_prediction(
             on_batch=scoring,
         )
         made = {c: o.value for c, o in zip(ordered, outputs, strict=True)}
-        known.put(request.run_id, made, digests)
+        known.put(request.run_id, made, digests, checkpoint=checkpoint)
 
     return PredictionResponse(predictions={**already, **made}, unknown=unknown)
+
+
+def run_generation(
+    request: GenerationRequest,
+    catalog,
+    store: RunStore,
+    cache: Path,
+    report=None,
+) -> GenerationResponse:
+    """Generate from inputs whose samples are named by content, fetching what is missing.
+
+    An input naming a sample this catalog does not know cannot be made, so
+    the whole request is refused rather than answered in part. See
+    ``docs/adr/0054``.
+    """
+    from ..handlers import generate as run_generate
+
+    wanted = list(
+        dict.fromkeys(c for i in request.inputs for sums in i.samples.values() for c in sums)
+    )
+
+    def fetching(done: int, total: int) -> None:
+        if report is not None:
+            report("fetching", done, total)
+
+    paths = catalog.ensure_cached(wanted, cache, on_progress=fetching) if wanted else {}
+    unknown = [c for c in wanted if c not in paths]
+    if unknown:
+        raise ServiceError(
+            f"This host's catalog does not know {len(unknown)} of the samples the "
+            f"inputs name, so nothing was generated: {', '.join(unknown[:5])}"
+            f"{', ...' if len(unknown) > 5 else ''}."
+        )
+
+    def generating(done: int, total: int) -> None:
+        if report is not None:
+            report("generating", done, total)
+
+    outputs = run_generate(
+        GenerateRequest(
+            run_id=request.run_id,
+            checkpoint=request.checkpoint,
+            inputs=[
+                GenerationInput(
+                    values=i.values,
+                    samples={role: [paths[c] for c in sums] for role, sums in i.samples.items()},
+                )
+                for i in request.inputs
+            ],
+            settings=request.settings,
+            seeds=request.seeds,
+        ),
+        store,
+        on_batch=generating,
+    )
+    return GenerationResponse(outputs=outputs)
 
 
 def metrics_of(store: RunStore, run_id: str) -> dict[str, float]:
