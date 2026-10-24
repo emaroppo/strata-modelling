@@ -163,19 +163,34 @@ class EvaluateRecord(Strict):
     checkpoints: list[CheckpointScores] = Field(default_factory=list)
 
 
-def makes(model: str) -> str | None:
+def makes(model: str, tasks: list[TaskRef] | None = None) -> str | None:
     """What a model makes: the media of the type a media model trains on, or None for labels.
 
-    Read from the class, so the run's model has to resolve here, wherever
-    it was trained. See ``docs/adr/0054``.
+    Read from the class where it resolves here. Where it does not, as a
+    baseline whose framework this install lacks while a modelling host
+    does the predicting, the tasks say: a run scored by tasks that read
+    generated media made that media, and any other run predicts labels,
+    which is all an evaluation on a host could be before media models.
+    See ``docs/adr/0054``.
     """
     try:
         model_cls = resolve_model(model)
     except ModelError as e:
-        raise StageError(
-            f"Cannot tell whether {model!r} predicts labels or generates media, since it "
-            f"does not resolve here: {e}"
-        ) from None
+        generated = set()
+        for ref in tasks or ():
+            try:
+                cls, _ = resolve("task", ref.ref)
+            except PluginError:
+                # Reported where the task is resolved for scoring
+                continue
+            if isinstance(cls, type) and issubclass(cls, GenerationTask):
+                generated.add(cls.media)
+        if len(generated) > 1:
+            raise StageError(
+                f"Cannot tell what {model!r} generates: it does not resolve here ({e}), "
+                f"and the tasks read {', '.join(sorted(generated))}."
+            ) from None
+        return generated.pop() if generated else None
     if not issubclass(model_cls, MediaModel):
         return None
     if model_cls.trains_on is None:
@@ -239,7 +254,7 @@ def evaluate(request: EvaluateRequest, context: Context) -> EvaluateRecord:
     label_type = manifest.label_schema.label_type
     run = _run(request.run_id, context)
     # The kind of model decides what the tasks read. docs/adr/0054
-    media = makes(run.model)
+    media = makes(run.model, request.tasks)
     refs = request.tasks
     if refs is None:
         if media is not None:

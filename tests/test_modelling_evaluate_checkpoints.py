@@ -236,6 +236,29 @@ def test_a_host_older_than_checkpoints_is_scored_once_from_its_last(dataset_dir)
     assert scored.metrics["exact_match"] == 1.0
 
 
+def test_a_host_run_whose_model_does_not_resolve_here_is_scored_as_a_label_model(dataset_dir):
+    """The host predicts, so its model need not import here: a base install, say."""
+    directory = dataset_dir(n_train=8, n_val=2)
+    _hold_out(directory, 2)
+    held = [s["checksum"] for s in json.loads((directory / MANIFEST_NAME).read_text())["samples"]]
+
+    class Elsewhere(FakeHost):
+        held: ClassVar[dict] = {**FakeHost.held, "model": "only-on-the-host"}
+
+        def predict(self, request):
+            return {"id": "job-2"}
+
+        def follow(self, job_id, on_state=None):
+            cat = {"kind": "choices", "values": ["cat"], "confidences": [0.9]}
+            return {"state": "done", "result": {"predictions": dict.fromkeys(held, cat)}}
+
+    scored = evaluate(
+        EvaluateRequest(run_id="r-gpu", dataset_dir=directory),
+        Context(store=None, host=Host("http://gpu", "t"), client=Elsewhere),
+    )
+    assert scored.metrics["exact_match"] == 1.0
+
+
 # ----------------------------------------------------------------------
 # A media model: every checkpoint generated from
 # ----------------------------------------------------------------------
