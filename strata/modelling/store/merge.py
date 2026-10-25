@@ -1,11 +1,7 @@
 """Folding one run store into another.
 
-A project keeps runs beside its checkpoints and a modelling host keeps its
-own; this puts a history split across both back together. Checkpoints are
-left behind unless asked for, and a run whose checkpoint did not come has
-its column cleared. Every checkpoint a run kept is recorded either way, its
-path cleared where its file did not come. See ``docs/adr/0005`` and
-``docs/adr/0054``.
+Checkpoint files are left behind unless asked for; their records come
+either way, path cleared. See ``docs/adr/0005`` and ``docs/adr/0054``.
 """
 
 from __future__ import annotations
@@ -20,12 +16,7 @@ from .runs import RunStore, RunStoreError
 
 
 class StoreMergeError(RunStoreError):
-    """The two stores cannot be merged as they stand.
-
-    Named for the store rather than called ``MergeError``, because the
-    catalog has one of those too and the two are merged in the same
-    breath — a caller importing both should not have to alias one.
-    """
+    """The two stores cannot be merged as they stand."""
 
 
 @dataclass
@@ -34,7 +25,7 @@ class StoreMergeReport:
 
     #: Runs copied in.
     runs: int = 0
-    #: Runs the target already had, by id. A merge run twice.
+    #: Runs the target already had, by id.
     already_present: int = 0
     #: Metric rows copied, final figures and training curves alike.
     metrics: int = 0
@@ -42,7 +33,7 @@ class StoreMergeReport:
     predictions: int = 0
     #: Checkpoint files copied.
     checkpoints: int = 0
-    #: Rows of what each run saw — a sample and its side — copied.
+    #: Rows of what each run saw, a sample and its side, copied.
     samples: int = 0
     #: Runs whose parent is in neither store. Copied, with the link dropped.
     orphaned: list[str] = field(default_factory=list)
@@ -72,10 +63,9 @@ def merge_stores(
     predictions: bool = True,
     dry_run: bool = False,
 ) -> StoreMergeReport:
-    """Copy every run ``target`` does not have out of ``source``.
+    """Copy every run ``target`` does not have out of ``source``, oldest first; re-runnable.
 
-    Re-runnable: an id the target holds is the same run. Oldest first; a
-    parent in neither store is dropped and reported. See ``docs/adr/0005``.
+    A parent in neither store is dropped and reported. See ``docs/adr/0005``.
     """
     if source.engine.url == target.engine.url:
         raise StoreMergeError(
@@ -87,8 +77,7 @@ def merge_stores(
     have = _ids(target)
     report = StoreMergeReport()
 
-    # Both sides, because a run whose parent is already in the target is
-    # not an orphan — only one whose parent exists nowhere is
+    # A run is an orphan only when its parent is in neither store.
     known = have | {row.id for row in rows}
 
     for row in rows:
@@ -102,16 +91,14 @@ def merge_stores(
             report.orphaned.append(row.id)
             values["parent_run_id"] = None
 
-        # Every checkpoint the run kept, its record copied whether or not its
-        # file comes too. docs/adr/0054
+        # Records copied whether or not the files come. docs/adr/0054
         kept = []
         held = source.get(row.id)
         for saved in held.checkpoints if held is not None else []:
             entry = {
                 "name": saved.name,
                 "digest": saved.digest,
-                # Never null in the table; a run read without one is from
-                # before it, and is dated by the run
+                # Not null in the table; a run from before it is dated by the run.
                 "saved_at": saved.saved_at or row.created_at,
             }
             source_file = saved.path
@@ -126,11 +113,10 @@ def merge_stores(
                         shutil.copy2(source_file, destination)
                 entry["path"] = str(destination)
             else:
-                # Not asked for, or asked for and not there: the path is
-                # cleared. docs/adr/0005
+                # docs/adr/0005
                 entry["path"] = None
             kept.append(entry)
-        # The run's column names its last, as it did where it came from
+        # The run's column names its last.
         values["checkpoint"] = kept[-1]["path"] if kept else None
 
         report.runs += 1
@@ -177,8 +163,7 @@ def _copy(
     for row in rows:
         values = {c.name: getattr(row, c.name) for c in table.columns}
         if drop_id:
-            # A metric's own id is that store's numbering; the target mints
-            # its own. docs/adr/0005
+            # A metric's id is that store's numbering. docs/adr/0005
             values.pop("id", None)
         payload.append(values)
     if not dry_run:

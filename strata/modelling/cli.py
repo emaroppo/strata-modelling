@@ -1,7 +1,5 @@
-"""``strata-runs``: looking after a run store from the command line.
-
-One command for now, ``merge``, which folds one store into another.
-Standard library only. See ``docs/adr/0005`` and ``docs/adr/0030``.
+"""``strata-runs``: looking after a run store from the command line. See ``docs/adr/0005`` and
+``docs/adr/0030``.
 """
 
 import argparse
@@ -10,7 +8,7 @@ from pathlib import Path
 from strata.common.cli import emit, run
 
 from .store.merge import merge_stores
-from .store.runs import RunStore, RunStoreError
+from .store.runs import RunStore, RunStoreError, RunStoreMissing
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -45,10 +43,23 @@ def main(argv: list[str] | None = None) -> int:
     return run(lambda: args.run(args), RunStoreError)
 
 
+def _target(root: Path, apply: bool) -> RunStore:
+    """The store to fold into: made on ``--apply``; a report alone opens what is there, and where
+    there is nothing, is computed against an empty store that leaves no directory behind. See
+    ``docs/adr/0018``.
+    """
+    if apply:
+        return RunStore.local(root)
+    try:
+        return RunStore.open(root)
+    except RunStoreMissing:
+        return RunStore.scratch(root)
+
+
 def _merge(args) -> int:
     report = merge_stores(
         RunStore.open(args.source),
-        RunStore.local(args.target),
+        _target(args.target, args.apply),
         checkpoints=args.checkpoints,
         dry_run=not args.apply,
     )

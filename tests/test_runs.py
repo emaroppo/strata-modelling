@@ -108,6 +108,19 @@ def test_a_local_store_needs_no_infrastructure(tmp_path):
     assert store.checkpoints.is_dir()
 
 
+def test_opening_a_store_creates_nothing(tmp_path):
+    """``open`` consults: an empty ``checkpoints/`` is no trace to leave (``docs/adr/0018``)."""
+    root = tmp_path / "runs"
+    RunStore.local(root)
+    (root / "checkpoints").rmdir()
+    before = sorted(p.relative_to(root) for p in root.rglob("*"))
+
+    store = RunStore.open(root)
+
+    assert sorted(p.relative_to(root) for p in root.rglob("*")) == before
+    assert not store.checkpoints.exists()
+
+
 def test_params_round_trip(store):
     run = store.record(a_run(params={"lr": 5e-5, "epochs": 4}), {})
     assert store.get(run.id).params == {"lr": 5e-5, "epochs": 4}

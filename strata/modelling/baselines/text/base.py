@@ -15,13 +15,11 @@ from .windows import DEFAULT_ENCODER, WindowDataset, Windowed, read_text
 class TransformerBase(Windowed, LabelModel):
     """Shared training loop for the text heads."""
 
-    #: Whether this head has to combine several windows into one answer for
-    #: the document. A classifier does, and has to be told how.
-    #: docs/adr/0014
+    #: Whether this head combines several windows into one answer, and so must be told how
+    #: (docs/adr/0014).
     aggregates_windows: ClassVar[bool] = False
 
-    #: Which combinations this head can perform. Narrower for a single-label
-    #: head. docs/adr/0014
+    #: Which combinations this head can perform (docs/adr/0014).
     AGGREGATIONS: ClassVar[tuple[str, ...]] = ("max", "mean", "any")
 
     def __init__(
@@ -36,14 +34,10 @@ class TransformerBase(Windowed, LabelModel):
         window_aggregation: str | None = None,
         seed: int | None = None,
     ):
-        """``window`` is off by default; off means truncation at ``MAX_LENGTH``.
+        """``window`` off means truncation at ``MAX_LENGTH``.
 
-        Whether to window is a property of the corpus, so it is declared
-        in ``[model.params]`` and recorded on the run (``docs/adr/0014``).
-        ``window_overlap`` is how many tokens consecutive windows share; it
-        must exceed the longest thing being labelled, and defaults to a
-        quarter of the window. ``seed`` makes training repeatable; None
-        leaves it to chance, as before.
+        ``window_overlap`` defaults to a quarter of the window and must exceed
+        the longest thing labelled; ``seed`` None leaves training to chance. See ``docs/adr/0014``.
         """
         if window is not None:
             if window_overlap is None:
@@ -62,8 +56,7 @@ class TransformerBase(Windowed, LabelModel):
                     f"{choices} — there is no right default."
                 )
             if window_aggregation is not None and window_aggregation not in self.AGGREGATIONS:
-                # Here rather than in `_merge`, so a typo fails before a
-                # round. docs/adr/0014
+                # Refused before a round. docs/adr/0014
                 raise ValueError(
                     f"{type(self).__name__} cannot combine windows by "
                     f"{window_aggregation!r}. It takes {choices}."
@@ -84,10 +77,7 @@ class TransformerBase(Windowed, LabelModel):
         raise NotImplementedError
 
     def _merge(self, text: str, outputs: list):
-        """Combine one document's windows into one answer.
-
-        Called with more than one only when windowing is on.
-        """
+        """Combine one document's windows into one answer."""
         return outputs[0]
 
     def _decode(self, text: str, logits: torch.Tensor, offsets):
@@ -116,7 +106,7 @@ class TransformerBase(Windowed, LabelModel):
                 f"Class list grew {len(self.classes)} -> {len(classes)}; "
                 "rebuilding the head, encoder weights kept."
             )
-            # A transformers model: base_model is its encoder, an nn.Module
+            # In a transformers model, base_model is the encoder.
             body = cast(nn.Module, self._net().base_model)
             self.classes = list(classes)
             self._model = self._build_model(self._label_count())
@@ -137,8 +127,7 @@ class TransformerBase(Windowed, LabelModel):
 
     @staticmethod
     def _collate(items: list[dict]) -> dict:
-        # ``offsets`` rides along for decoding and is not model input; the
-        # forward pass would reject it as an unexpected keyword.
+        # ``offsets`` is for decoding, not model input; the forward pass would reject it.
         keys = [k for k in items[0] if k != "offsets"]
         return {k: torch.stack([item[k] for item in items]) for k in keys}
 
@@ -149,7 +138,7 @@ class TransformerBase(Windowed, LabelModel):
         val: list[Example] | None = None,
         on_epoch=None,
     ) -> dict:
-        # Before the head is built, so its initialisation is seeded too
+        # Before the head is built, so its initialisation is seeded too.
         seed_everything(self.seed)
         self._prepare(classes)
         dataset, loader = self._loader(train, shuffle=True)
@@ -181,8 +170,7 @@ class TransformerBase(Windowed, LabelModel):
                     progress.update(task, advance=1, loss=total_loss / max(seen, 1))
 
         metrics = {"loss": total_loss / max(seen, 1)}
-        # What the training set lost on the way in, recorded on the run.
-        # docs/adr/0036
+        # What the training set lost on the way in. docs/adr/0036
         metrics.update({f"train_{k}": v for k, v in dataset.diagnostics.items()})
         if val:
             metrics.update(self._evaluate(val))
@@ -211,8 +199,7 @@ class TransformerBase(Windowed, LabelModel):
             task = progress.add_task("predict", total=len(paths))
             for done, path in enumerate(paths, start=1):
                 text = read_text(path)
-                # One item per window, so a long document is answered whole.
-                # docs/adr/0014
+                # One item per window. docs/adr/0014
                 per_window = []
                 for item in self._encode(text, None):
                     fields = {

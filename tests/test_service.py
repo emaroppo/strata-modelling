@@ -473,8 +473,7 @@ class FakeCache:
 def stub_predict(monkeypatch):
     """Stand in for inference; the handler is covered where it lives.
 
-    run_prediction imports the handler when it runs, so patching the
-    handler's own module is what takes effect.
+    Patched where run_prediction calls it by name.
     """
     from strata.contracts import ChoicesPrediction
     from strata.modelling.requests import ScoredPath
@@ -489,7 +488,7 @@ def stub_predict(monkeypatch):
             for path in request.paths
         ]
 
-    monkeypatch.setattr("strata.modelling.handlers.predict", fake)
+    monkeypatch.setattr("strata.modelling.remote.rounds.run_predict", fake)
     return seen
 
 

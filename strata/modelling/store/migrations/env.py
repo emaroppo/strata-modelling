@@ -1,9 +1,7 @@
-"""Alembic environment for the run store and the prediction cache.
+"""Alembic environment for the run store and the prediction cache, which share one history.
 
-They share one metadata and one SQLite file, so they share one history.
-
-``$STRATA_RUNS_URL`` names the store, or ``$STRATA_RUNS_ROOT`` a project's
-``runs/`` directory; there is no host-wide default. See ``docs/adr/0019``.
+``$STRATA_RUNS_URL`` names the store, or ``$STRATA_RUNS_ROOT`` a project's ``runs/``. See
+``docs/adr/0019``.
 """
 
 from __future__ import annotations

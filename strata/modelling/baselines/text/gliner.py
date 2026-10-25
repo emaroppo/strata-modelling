@@ -1,21 +1,8 @@
-"""Span labelling with GLiNER: whole spans scored against label prompts.
+"""Span labelling with GLiNER: whole spans scored against a prompt per class, zero-shot at
+``num_epochs=0``.
 
-A tagger decides each token's tag on its own, so "John Smith" is two
-decisions that have to agree. GLiNER scores candidate spans against a
-prompt per class ("person", "organization"), so a name is one decision, and
-a pretrained checkpoint labels before it has seen a single example.
-
-``num_epochs=0`` is that zero-shot use: nothing is trained, the classes are
-mapped to prompts, and the run is still a run, with a checkpoint that
-``predict`` and ``push`` can use. More epochs fine-tune the checkpoint on
-the training split.
-
-Two of GLiNER's limits are handled here rather than left to bite. It reads
-at most ``max_len`` words and drops the rest with only a warning, so a long
-document is cut into overlapping word windows and the answers merged back
-(``bio.merge_windows``). And its words are its own splitter's, which an
-entity must start and end on; a training span that doesn't is dropped and
-counted, never stored askew.
+Long documents are cut into overlapping word windows and merged back; a
+training span not on word boundaries is dropped and counted (``docs/adr/0036``).
 """
 
 import re
@@ -35,8 +22,7 @@ from .windows import read_text
 
 DEFAULT_CHECKPOINT = "knowledgator/gliner-pii-base-v1.0"
 
-#: What GLiNER is asked to find for each class. A class with no entry is
-#: asked for by its own name.
+#: What GLiNER is asked to find for each class; a class with no entry is asked for by name.
 DEFAULT_PROMPTS = {
     "PER": "person",
     "ORG": "organization",
@@ -48,16 +34,11 @@ DEFAULT_PROMPTS = {
     "ATTACHMENT": "attachment file name",
 }
 
-#: GLiNER's own word splitter (``WhitespaceTokenSplitter``). Training spans
-#: are mapped onto these words and windows are cut between them, so it has
-#: to be the same one the model uses.
+#: GLiNER's own word splitter (``WhitespaceTokenSplitter``), which spans and windows must agree
+#: with.
 WORD = re.compile(r"\w+(?:[-_]\w+)*|\S")
 
-#: The same, but a URL or an email address is one word. GLiNER's own
-#: splitter makes every "/", "." and "=" a word, and a span is at most
-#: ``max_width`` words, so most URLs could not be one span at all. A
-#: closing bracket, quote or sentence punctuation stays outside, as the
-#: labelling guide has it.
+#: The same, but a URL or an email address is one word, since a span is at most ``max_width`` words.
 WHOLE = re.compile(
     r"(?:https?://|www\.)[^\s<>\"'()\[\]]*[^\s<>\"'()\[\].,;:!?]"
     r"|[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
@@ -102,11 +83,10 @@ def windows(count: int, size: int, overlap: int) -> list[tuple[int, int]]:
 def to_training(
     text: str, spans: list[Span], prompts: dict[str, str], size: int, pattern: re.Pattern = WORD
 ) -> tuple[list[dict], int]:
-    """GLiNER's training records for one document, and how many spans didn't fit.
+    """GLiNER's training records for one document, and how many spans did not fit.
 
-    Windows don't overlap here: an entity inside an overlap would be
-    trained on twice. A span that doesn't start and end on a word, or that
-    crosses a window's edge, is dropped and counted.
+    Windows do not overlap, or an entity in the overlap would train twice;
+    a span off word boundaries or across an edge is dropped and counted.
     """
     bounds = words(text, pattern)
     first = {start: i for i, (start, _) in enumerate(bounds)}
@@ -131,7 +111,6 @@ def to_training(
                 "ner": [[i - start, j - start, p] for i, j, p in inside],
             }
         )
-    # Whatever no window held whole crossed an edge between two
     return records, dropped + len(placed) - kept
 
 
@@ -158,11 +137,10 @@ class GlinerSpanTagger(LabelModel):
         seed: int | None = None,
         device: str | None = None,
     ):
-        """``max_width`` and ``chunk_words`` default to the checkpoint's own
-        ``max_width`` and ``max_len``. ``revision`` pins the checkpoint; left
-        out, the one loaded is resolved and kept in the saved model.
-        ``whole_urls`` makes each URL and email address one word (see
-        ``WHOLE``), for the model and for the windows alike.
+        """``max_width`` and ``chunk_words`` default to the checkpoint's own; ``revision`` left out
+        is resolved and saved.
+
+        ``whole_urls`` makes each URL and email address one word (``WHOLE``).
         """
         if chunk_words is not None and chunk_overlap >= chunk_words:
             raise ValueError(
@@ -190,18 +168,16 @@ class GlinerSpanTagger(LabelModel):
     # -- the checkpoint ------------------------------------------------------
 
     def _load(self, state_dict: dict | None = None) -> None:
-        from gliner import GLiNER
+        from gliner import GLiNER  # the gliner extra, imported where it is used
 
         if self.revision is None:
             self.revision = _resolved(self.checkpoint)
-        # None leaves the checkpoint's own max_width
         model = GLiNER.from_pretrained(
             self.checkpoint, revision=self.revision, max_width=self.max_width
         )
         if state_dict is not None:
             model.load_state_dict(state_dict)
         if self.whole_urls:
-            # What the processor splits with, at training and at inference
             model.data_processor.words_splitter = Splitter(WHOLE)
         self._model = model.to(self.device)
 
@@ -278,9 +254,7 @@ class GlinerSpanTagger(LabelModel):
                 save_strategy="no",
                 logging_steps=max(1, steps // 10),
                 use_cpu=self.device.type == "cpu",
-                # Full precision, deliberately. With fp16 on GLiNER's summed
-                # loss every step overflowed and the scaler skipped it: a
-                # "fine-tuned" run whose weights had not moved at all.
+                # With fp16 GLiNER's summed loss overflows and the scaler skips every step.
                 fp16=False,
                 dataloader_num_workers=0,
                 seed=self.seed if self.seed is not None else 42,
@@ -292,7 +266,6 @@ class GlinerSpanTagger(LabelModel):
             (e["train_loss"] for e in reversed(trainer.state.log_history) if "train_loss" in e),
             0.0,
         )
-        # What the training set lost on the way in, recorded on the run.
         # docs/adr/0036
         return {"loss": float(loss), "train_spans_dropped": float(dropped)}
 
@@ -315,7 +288,6 @@ class GlinerSpanTagger(LabelModel):
                 per_window = []
                 ranges = windows(len(bounds), size, overlap) if bounds else []
                 pieces = [(bounds[a][0], text[bounds[a][0] : bounds[b - 1][1]]) for a, b in ranges]
-                # A list of texts in, a list of entity lists out
                 found = cast(
                     list[list[dict]],
                     model.inference(
@@ -339,11 +311,7 @@ class GlinerSpanTagger(LabelModel):
     # -- checkpoints ---------------------------------------------------------
 
     def save(self, path: Path) -> None:
-        """One file, which is what a run's checkpoint is.
-
-        Zero-shot keeps no weights: the pinned revision of the checkpoint
-        is what it predicts with, fetched again on load.
-        """
+        """One file; zero-shot keeps no weights, only the pinned revision, fetched again on load."""
         net = self._net()
         torch.save(
             {
@@ -388,15 +356,11 @@ def _prediction(text: str, entities: list[dict], offset: int, by_prompt: dict) -
 
 
 def _resolved(checkpoint: str) -> str | None:
-    """The commit a checkpoint name points at now, so a run can be repeated.
-
-    None when it can't be asked (offline, or a local directory): the load
-    then uses whatever the cache holds, as before.
-    """
+    """The commit a checkpoint name points at now, or None when it cannot be asked."""
     try:
-        from huggingface_hub import model_info
+        from huggingface_hub import model_info  # comes with the gliner extra's transformers
 
         return model_info(checkpoint).sha
-    # Any failure to ask means "not pinned", never a failed run
+    # Not pinned, never a failed run.
     except Exception:
         return None

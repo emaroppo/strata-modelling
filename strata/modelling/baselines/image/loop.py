@@ -10,10 +10,8 @@ from .._shared import epoch_progress, predict_progress
 def fit(backbone, loader, criterion, *, lr, num_epochs, device, count_correct, on_epoch=None):
     """Train for ``num_epochs`` and return the mean loss and accuracy over all of them."""
     optimizer = torch.optim.AdamW(backbone.parameters(), lr=lr, weight_decay=1e-2)
-    # fp16 autocast roughly halves activation memory; no-op off CUDA
     use_amp = device.type == "cuda"
     scaler = GradScaler("cuda", enabled=use_amp)
-    # Per-step warmup then cosine decay
     total_steps = num_epochs * len(loader)
     warmup_steps = max(1, min(100, total_steps // 10))
     scheduler = torch.optim.lr_scheduler.SequentialLR(
@@ -68,7 +66,7 @@ def fit(backbone, loader, criterion, *, lr, num_epochs, device, count_correct, o
             total_correct += epoch_correct
             total_samples += epoch_samples
             if on_epoch is not None:
-                # At the epoch boundary rather than per batch. docs/adr/0031
+                # docs/adr/0031
                 on_epoch(
                     epoch,
                     num_epochs,
@@ -109,7 +107,7 @@ def predict_probs(backbone, loader, *, total: int, device, activation, on_batch=
     use_amp = device.type == "cuda"
     backbone.eval()
     if use_amp and total >= 2000:
-        # ~25s one-time compile, ~2x steady-state — only worth it on big jobs
+        # Compiling costs more than it saves on a small job.
         backbone = torch.compile(backbone)
     batches: list[torch.Tensor] = []
     with torch.no_grad(), predict_progress() as progress:
@@ -123,6 +121,6 @@ def predict_probs(backbone, loader, *, total: int, device, activation, on_batch=
             progress.advance(task, batch.size(0))
             done += batch.size(0)
             if on_batch is not None:
-                # Per batch rather than per sample. docs/adr/0031
+                # docs/adr/0031
                 on_batch(done, total)
     return torch.cat(batches)

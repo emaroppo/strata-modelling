@@ -1,16 +1,8 @@
 """The evaluate stage: one side of a directory scored with a recorded run, by the tasks asked.
 
-A task is strata-evaluation's: found by name or by a project's own file, it
-reads one label type and asks one question of it, and what it records
-carries the identity of the code that produced it. Predictions come from the
-cache or the modelling host; the scoring always runs here. See
-``docs/adr/0035`` and ``docs/adr/0042``.
-
-Every checkpoint the run kept is scored, each on its own, and the record
-says which checkpoint each score belongs to. A media model's run is scored
-by generating: one output from each sample's input, which a generation task
-reads beside the side's targets and the training side's. The outputs stay
-in the evaluation's result, never the catalog. See ``docs/adr/0054``.
+Predictions come from the cache or the host, scoring runs here, every
+checkpoint is scored, a media model's by generating. See ``docs/adr/0035``,
+``docs/adr/0042`` and ``docs/adr/0054``.
 """
 
 import hashlib
@@ -57,8 +49,8 @@ DEFAULT_TASKS: dict[str, list[str]] = {
     "span": ["entities"],
 }
 
-#: What a media model's outputs are scored by when a request names no task,
-#: by the media it makes. See ``docs/adr/0054``.
+#: What a media model's outputs are scored by when a request names no task, by media
+#: (``docs/adr/0054``).
 DEFAULT_GENERATION_TASKS: dict[str, list[str]] = {
     "text": ["text-generation"],
 }
@@ -67,10 +59,7 @@ DEFAULT_GENERATION_TASKS: dict[str, list[str]] = {
 class TaskRef(Strict):
     """A task to run: its name or ``file.py:Class``, its parameters, and what it was checked as.
 
-    ``identities`` is the task's own identity followed by those of the plugins
-    its parameters name, as resolved when the request was made. Given, it is
-    held to: code that changed between then and now is refused rather than
-    scored under the old identity. See ``docs/adr/0042``.
+    ``identities``, when given, is held to: changed code is refused. See ``docs/adr/0042``.
     """
 
     ref: str
@@ -85,20 +74,15 @@ class EvaluateRequest(Keyed):
 
     run_id: str
     dataset_dir: Path
-    #: ``holdout`` is what a study reports on; ``val`` is what it selects on
-    #: (``docs/adr/0003``).
+    #: ``holdout`` is what a study reports on, ``val`` what it selects on (``docs/adr/0003``).
     side: Literal["val", "holdout"] = "holdout"
-    #: None is the label type's default: classify, or entities. For a media
-    #: model, its media's: text-generation.
+    #: None is the label type's default, or the media's for a media model.
     tasks: list[TaskRef] | None = None
-    #: Which of the run's checkpoints to score, by name. None is every one
-    #: it kept. See ``docs/adr/0054``.
+    #: Which of the run's checkpoints to score, by name; None is every one (``docs/adr/0054``).
     checkpoints: list[str] | None = None
-    #: A media model's generation settings, over its own defaults. Empty is
-    #: its defaults. Every output is made with the same.
+    #: A media model's generation settings over its defaults, the same for every output.
     settings: dict = Field(default_factory=dict)
-    #: What each output's seed is drawn from, with its sample's checksum.
-    #: See :func:`sample_seed`.
+    #: What each output's seed is drawn from, with its sample's checksum; see :func:`sample_seed`.
     seed: int = 0
 
 
@@ -116,8 +100,7 @@ class GeneratedText(Strict):
     #: The sample whose input it was made from, and whose file is its target.
     checksum: str
     seed: int
-    #: Whether it stopped on its own rather than at the token limit; None
-    #: where the model did not say.
+    #: Whether it stopped on its own; None where the model did not say.
     ended: bool | None = None
     output: str
 
@@ -125,18 +108,15 @@ class GeneratedText(Strict):
 class CheckpointScores(Strict):
     """One checkpoint's scores, and what a media model generated for them."""
 
-    #: None where a modelling host older than checkpoints answered from the
-    #: run's last without naming it.
+    #: None where a host older than checkpoints answered from the run's last.
     name: str | None
     digest: str | None = None
     #: Each task's score, by the task's name, with what produced it.
     scores: dict[str, TaskScore] = Field(default_factory=dict)
-    #: A media model's outputs, in sample order, positional with any
-    #: per-output detail in ``scores``. Empty when kept in a file instead.
+    #: A media model's outputs, in sample order; empty when kept in a file instead.
     outputs: list[GeneratedText] = Field(default_factory=list)
-    #: The file they were kept in, by name, under the context's ``outputs``:
-    #: one JSON line per output. Named by its content, so a record that is
-    #: found again names the same file.
+    #: The content-named file they were kept in, under the context's ``outputs``, one JSON line
+    #: each.
     outputs_file: str | None = None
 
 
@@ -146,32 +126,23 @@ class EvaluateRecord(Strict):
     where: Where
     #: Samples with an answer on that side; the denominator.
     samples: int
-    #: Each task's score, by the task's name, with what produced it: the
-    #: last checkpoint scored, which is the run's last unless the request
-    #: names others. Every checkpoint's is in ``checkpoints``.
+    #: Each task's score for the last checkpoint scored; every checkpoint's is in ``checkpoints``.
     scores: dict[str, TaskScore] = Field(default_factory=dict)
-    #: The classify task's numbers, where it ran, as records before tasks
-    #: had them: ``exact_match`` and micro ``precision``, ``recall``, ``f1``.
-    #: Kept so a reader of older records reads these the same way.
+    #: The classify task's numbers as records before tasks had them, for readers of older records.
     metrics: dict[str, float] = Field(default_factory=dict)
     per_class: dict[str, ClassScore] = Field(default_factory=dict)
-    #: The checkpoint ``scores`` belong to. None on a record from before
-    #: checkpoints, and where a host did not name it. See ``docs/adr/0054``.
+    #: The checkpoint ``scores`` belong to; None on a record from before checkpoints
+    #: (``docs/adr/0054``).
     checkpoint: str | None = None
-    #: Every checkpoint scored, oldest first. Empty on a record from before
-    #: checkpoints, which scored the run's last.
+    #: Every checkpoint scored, oldest first; empty on a record from before checkpoints.
     checkpoints: list[CheckpointScores] = Field(default_factory=list)
 
 
 def makes(model: str, tasks: list[TaskRef] | None = None) -> str | None:
-    """What a model makes: the media of the type a media model trains on, or None for labels.
+    """What a model makes: the media a media model trains on, or None for labels.
 
-    Read from the class where it resolves here. Where it does not, as a
-    baseline whose framework this install lacks while a modelling host
-    does the predicting, the tasks say: a run scored by tasks that read
-    generated media made that media, and any other run predicts labels,
-    which is all an evaluation on a host could be before media models.
-    See ``docs/adr/0054``.
+    Where the class does not resolve here, the tasks say: generation tasks
+    name a media, anything else is labels. See ``docs/adr/0054``.
     """
     try:
         model_cls = resolve_model(model)
@@ -181,7 +152,6 @@ def makes(model: str, tasks: list[TaskRef] | None = None) -> str | None:
             try:
                 cls, _ = resolve("task", ref.ref)
             except PluginError:
-                # Reported where the task is resolved for scoring
                 continue
             if isinstance(cls, type) and issubclass(cls, GenerationTask):
                 generated.add(cls.media)
@@ -203,12 +173,8 @@ def resolved(
 ) -> tuple[BaseTask, Any, list[Identity]]:
     """The task a ref names, its parameters, and the identities it resolves to now.
 
-    ``media`` is what the run's model generates, or None for a label model.
-    A label task is checked against the label set and a generation task
-    against the media, and either one is refused for the other kind of
-    model. Refused, before anything is scored, when the task does not
-    exist, will not take its parameters, cannot read this label set or
-    media, or names a plugin that does not resolve.
+    ``media`` is what the run's model generates, or None for a label model;
+    a task of the other kind is refused before anything is scored.
     """
     try:
         cls, identity = resolve("task", ref.ref)
@@ -237,13 +203,9 @@ def resolved(
 
 
 def sample_seed(seed: int, checksum: str) -> int:
-    """The seed one sample's output is generated with, under a stage's ``seed``.
+    """The seed one sample's output is generated with, under a stage's ``seed``, below 2**31.
 
-    Drawn from the sample's checksum rather than its position, so a sample
-    keeps its seed whatever else is on the side and whatever order the
-    manifest lists it in, and every checkpoint is asked with the same one:
-    two checkpoints' outputs then differ by their weights, not their luck.
-    Below 2**31, which every framework's seeding takes.
+    Drawn from the checksum, not the position, so every checkpoint is asked with the same one.
     """
     digest = hashlib.sha256(f"{seed}:{checksum}".encode()).digest()
     return int.from_bytes(digest[:4], "big") >> 1
@@ -253,7 +215,6 @@ def evaluate(request: EvaluateRequest, context: Context) -> EvaluateRecord:
     manifest = _manifest(request.dataset_dir)
     label_type = manifest.label_schema.label_type
     run = _run(request.run_id, context)
-    # The kind of model decides what the tasks read. docs/adr/0054
     media = makes(run.model, request.tasks)
     refs = request.tasks
     if refs is None:
@@ -264,7 +225,6 @@ def evaluate(request: EvaluateRequest, context: Context) -> EvaluateRecord:
                 )
             refs = [TaskRef(ref=name) for name in DEFAULT_GENERATION_TASKS[media]]
         elif label_type not in DEFAULT_TASKS:
-            # Refused rather than approximated. docs/adr/0035
             raise StageError(
                 f"No task scores a {label_type} label set by default yet; name one "
                 f"that does, or leave it unscored. Box-level scoring is still to come."
@@ -349,16 +309,15 @@ def _run(run_id: str, context: Context) -> Run:
     return run
 
 
-#: A checkpoint to score: its name and digest, or (None, None) for the run's
-#: last where its holder does not name checkpoints.
+#: A checkpoint to score: name and digest, or (None, None) for the run's last where its holder names
+#: none.
 Chosen = tuple[str | None, str | None]
 
 
 def _chosen(run: Run, named: list[str] | None) -> list[Chosen]:
     """The checkpoints to score, oldest first: every one the run kept, or those named.
 
-    A run from a host older than checkpoints lists none, and is scored once,
-    from whatever that host calls its last. See ``docs/adr/0054``.
+    A run listing none is scored once, from its holder's last. See ``docs/adr/0054``.
     """
     if not run.checkpoints:
         if named:
@@ -396,7 +355,7 @@ def _scored_labels(request: EvaluateRequest, context: Context, tasks, samples, c
     scored = []
     for name, digest in checkpoints:
         predictions = _predictions(request, context, samples, name)
-        # Every sample here has an answer; the filter says so to the type checker
+        # The filter tells the type checker what the selection above ensured.
         documents = [
             Document(s.value, predictions[s.checksum], texts.get(s.checksum))
             for s in samples
@@ -413,9 +372,8 @@ def _scored_labels(request: EvaluateRequest, context: Context, tasks, samples, c
 
 
 def _predictions(request: EvaluateRequest, context: Context, samples, checkpoint: str | None):
-    """What a checkpoint says about each sample, from the cache where it can be.
-
-    The cache is keyed on checkpoint, bytes and features. See ``docs/adr/0006``.
+    """What a checkpoint says about each sample, from the cache where it can be. See
+    ``docs/adr/0006``.
     """
     digests = {s.checksum: feature_digest(s.features) for s in samples}
     checksums = [s.checksum for s in samples]
@@ -472,13 +430,10 @@ def _predictions(request: EvaluateRequest, context: Context, samples, checkpoint
 def _scored_generations(
     request: EvaluateRequest, context: Context, tasks, samples, training, checkpoints
 ):
-    """Each checkpoint's outputs, one per sample's input, scored beside the targets.
+    """Each checkpoint's outputs, one per sample's features, scored beside the side's and the
+    training side's files.
 
-    The input is the sample's features, as it was in training; samples by
-    role are not given yet. Every output is made with the request's
-    settings, and each with its sample's seed. The targets are the side's
-    files and ``training`` the training side's, read as documents are. See
-    ``docs/adr/0054``.
+    See ``docs/adr/0054``.
     """
     try:
         targets = [read_document(Path(request.dataset_dir) / s.path) for s in samples]
@@ -501,8 +456,7 @@ def _scored_generations(
                 checksum=s.checksum,
                 seed=out.seed,
                 ended=out.ended,
-                # Read as a document is, so a stray byte is marked rather than
-                # refused. strata.evaluation.text
+                # Read as strata.evaluation.text reads a document.
                 output=out.data.decode("utf-8", errors="replace"),
             )
             for s, out in zip(samples, made, strict=True)
@@ -553,7 +507,7 @@ def _generated(
         finished = client.follow(job["id"], on_state=context.on_state)
         if finished.get("state") != "done":
             raise RemoteError(f"The host reports job {job['id']} failed: {finished.get('error')}")
-        # As JSON, where an output's bytes are base64
+        # Through JSON, where an output's bytes are base64.
         parse = TypeAdapter(list[GeneratedOutput])
         return parse.validate_json(json.dumps(finished["result"]["outputs"]))
 
@@ -576,11 +530,10 @@ def _generated(
 
 
 def _kept(outputs: list[GeneratedText], directory: Path | None) -> str | None:
-    """Write ``outputs`` under ``directory``, one JSON line each, and return the file's name.
+    """Write ``outputs`` under ``directory`` as a content-named file of JSON lines, whole or absent;
+    None without a directory.
 
-    Named by the content, so writing the same outputs again is the same
-    file, and a file is whole or absent (``docs/adr/0026``). None, writing
-    nothing, without a directory.
+    See ``docs/adr/0026``.
     """
     if directory is None:
         return None

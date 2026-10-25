@@ -10,19 +10,14 @@ from .classifier import MultiLabelClassifier
 
 
 class MulticlassClassifier(MultiLabelClassifier):
-    """Single-label variant: classes are mutually exclusive.
-
-    Only the loss (cross-entropy vs BCE), target encoding, and prediction
-    decoding differ. Predictions carry exactly one label with its softmax
-    confidence.
-    """
+    """Single-label variant: one class per image, with its softmax confidence."""
 
     def _make_criterion(self) -> nn.Module:
         return nn.CrossEntropyLoss()
 
     @staticmethod
     def _encode_target(labels: list[str], class_to_idx: dict[str, int]) -> torch.Tensor:
-        # Exactly one class per image; first label wins if data has extras
+        # The first label wins where the data carries extras.
         idx = class_to_idx.get(labels[0], 0) if labels else 0
         return torch.tensor(idx, dtype=torch.long)
 
@@ -44,11 +39,8 @@ class MulticlassClassifier(MultiLabelClassifier):
 class PresenceClassifier(MultiLabelClassifier):
     """Independent presence detectors with an implicit negative class.
 
-    One sigmoid per positive class ("is X present in the picture?"), so any
-    combination of classes can co-occur. NEGATIVE_LABEL is a dataset marker
-    meaning "reviewed, nothing present": it gets no output neuron, trains as
-    an all-zeros target, and is emitted as the prediction when no class
-    clears the threshold. See ``docs/adr/0014``.
+    ``NEGATIVE_LABEL`` gets no neuron, trains as all zeros, and is emitted
+    when no class clears the threshold. See ``docs/adr/0014``.
     """
 
     NEGATIVE_LABEL = "none"

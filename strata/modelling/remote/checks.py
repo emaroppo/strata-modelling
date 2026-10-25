@@ -1,5 +1,7 @@
 """What a round is checked against before it is accepted: catalog, dataset, features, model."""
 
+from strata.contracts import order_digest, sides_from_string, sides_string
+
 from ..plugins.registry import available
 from .wire import RoundRequest, ServiceError, SplitSides
 
@@ -17,10 +19,7 @@ class SplitMismatch(ServiceError):
 
 
 def check_catalog(requested: str, serving: str) -> None:
-    """Refuse a round prepared against a different catalog.
-
-    ``dataset_id`` is only meaningful within one catalog. See ``docs/adr/0008``.
-    """
+    """Refuse a round prepared against a different catalog. See ``docs/adr/0008``."""
     if requested == serving:
         return
     raise CatalogMismatch(
@@ -33,9 +32,7 @@ def check_catalog(requested: str, serving: str) -> None:
 def check_dataset(request: RoundRequest, found) -> None:
     """Refuse a round whose dataset id names something else in this catalog.
 
-    The round says what it means by the id; this checks that it means the
-    same here. ``found`` is what this host's catalog says the id is, a
-    :class:`~strata.catalog.DatasetRef`. See ``docs/adr/0008``.
+    ``found`` is this host's :class:`~strata.catalog.DatasetRef` for the id. See ``docs/adr/0008``.
     """
     if (request.dataset_name, request.dataset_version) != (found.name, found.version):
         raise DatasetMismatch(
@@ -54,14 +51,10 @@ def check_dataset(request: RoundRequest, found) -> None:
 
 
 def check_split(split: SplitSides, manifest) -> list[str] | None:
-    """The sides to apply to the version this host materialised, or None
-    when the version already has them.
+    """The sides to apply to the version this host materialised, or None when it already has them.
 
-    Positional, so the order is proven first: the count, and the digest of
-    the checksums in manifest order. See ``docs/adr/0025``.
+    Positional, so the count and the order digest are proven first. See ``docs/adr/0025``.
     """
-    from strata.contracts import order_digest, sides_from_string, sides_string
-
     if len(split.sides) != len(manifest.samples):
         raise SplitMismatch(
             f"The round's split names {len(split.sides)} sample(s), and {manifest.dataset} "
@@ -83,10 +76,10 @@ def check_split(split: SplitSides, manifest) -> list[str] | None:
 
 
 def check_features(request: RoundRequest) -> list:
-    """The feature declarations a round carries, or a refusal naming the bad one.
-
-    Read before anything is fetched. See ``docs/adr/0014``.
+    """The feature declarations a round carries, or a refusal naming the bad one. See
+    ``docs/adr/0014``.
     """
+    # The catalog is the service extra's, and this layer's alone to know. docs/adr/0007
     from strata.catalog.versions.features import FeatureError, FeatureSpec
 
     try:
@@ -96,10 +89,7 @@ def check_features(request: RoundRequest) -> list:
 
 
 def check_servable(model: str) -> None:
-    """Refuse a model this host cannot honestly resolve.
-
-    A file reference names a path on the caller's machine. See ``docs/adr/0007``.
-    """
+    """Refuse a file reference, which names a path on the caller's machine (``docs/adr/0007``)."""
     if ":" not in model:
         return
     raise ServiceError(

@@ -1,9 +1,6 @@
-"""Predictions already made, so nobody pays for them twice.
+"""Predictions already made, keyed on run, checkpoint, checksum and feature digest, beside the runs.
 
-Keyed on the run, the checkpoint, the sample's checksum and a digest of
-its features; nothing is ever invalidated. Lives beside the runs. Holds
-whatever a model produced and reads it back through the discriminator. See
-``docs/adr/0006`` and ``docs/adr/0054``.
+See ``docs/adr/0006`` and ``docs/adr/0054``.
 """
 
 from collections.abc import Mapping
@@ -16,12 +13,13 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from strata.contracts import AnyPrediction, Prediction
 
 from . import tables as t
+from .runs import RunStore
 
 _PREDICTION = TypeAdapter(AnyPrediction)
 
 
 def _chunks(items: list, size: int):
-    """SQLite caps parameters per statement; a review pool is well past it."""
+    """SQLite caps parameters per statement."""
     for start in range(0, len(items), size):
         yield items[start : start + size]
 
@@ -34,12 +32,7 @@ class PredictionCache:
 
     @classmethod
     def local(cls, root: Path) -> "PredictionCache":
-        """The cache in the run store under ``root``, made if there is none.
-
-        The same database the runs are in. See ``docs/adr/0006``.
-        """
-        from .runs import RunStore
-
+        """The cache in the run store under ``root``, made if there is none (``docs/adr/0006``)."""
         return cls.beside(RunStore.local(root))
 
     @classmethod
@@ -48,9 +41,7 @@ class PredictionCache:
         return cls(store.engine)
 
     def last_checkpoint(self, run_id: str) -> str:
-        """The name of a run's last checkpoint, which a caller naming none means.
-
-        Empty for a run that kept none, or that this store does not hold.
+        """The name of a run's last checkpoint; empty for a run that kept none or is not held here.
         See ``docs/adr/0054``.
         """
         with self.engine.connect() as conn:
@@ -71,13 +62,9 @@ class PredictionCache:
     ) -> dict[str, AnyPrediction]:
         """Whatever of ``checksums`` this run's checkpoint has already answered.
 
-        ``digests`` says what the model was told about each sample, by
-        :func:`strata.contracts.feature_digest`. A checksum whose features
-        have changed since it was scored simply misses (``docs/adr/0006``).
-
-        Omitted, every lookup uses the empty digest, which is what a
-        project declaring no features writes. ``checkpoint`` is a name; None
-        is the run's last (``docs/adr/0054``).
+        ``digests`` is each sample's :func:`strata.contracts.feature_digest`,
+        empty when omitted; ``checkpoint`` None is the run's last. See ``docs/adr/0006`` and
+        ``docs/adr/0054``.
         """
         found: dict[str, AnyPrediction] = {}
         if not checksums:
@@ -123,7 +110,6 @@ class PredictionCache:
             if not isinstance(value, Prediction)
         }
         if wrong:
-            # A wrapper around a prediction reads back empty. docs/adr/0006
             kinds = ", ".join(sorted(set(wrong.values())))
             raise TypeError(
                 f"A prediction cache holds model output, not {kinds}. "
@@ -145,7 +131,7 @@ class PredictionCache:
         ]
         with self.engine.begin() as conn:
             for chunk in _chunks(rows, 500):
-                # A second write of the same key carries the same value. docs/adr/0006
+                # docs/adr/0006
                 conn.execute(
                     sqlite_insert(t.prediction).on_conflict_do_nothing(
                         index_elements=["run_id", "checkpoint", "checksum", "feature_digest"]

@@ -54,3 +54,20 @@ def test_json_is_the_report_whole(tmp_path, capsys):
         "applied",
     }
     assert payload["runs"] == 1 and payload["applied"] is False
+
+
+def test_a_dry_run_against_an_absent_target_leaves_no_directory_behind(tmp_path, capsys):
+    source = RunStore.local(tmp_path / "gpu")
+    recorded(source, origin="gpu")
+    recorded(source, origin="gpu")
+    target = tmp_path / "laptop"
+
+    args = ["--json", "merge", "--from", str(tmp_path / "gpu"), "--into", str(target)]
+    assert main(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["runs"] == 2 and payload["applied"] is False
+    assert not target.exists()
+
+    assert main([*args, "--apply"]) == 0
+    assert json.loads(capsys.readouterr().out)["runs"] == 2
+    assert len(RunStore.open(target).history("demo", "val_accuracy")) == 2

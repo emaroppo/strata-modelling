@@ -1,27 +1,10 @@
-"""A causal language model LoRA-tuned to write a text from its input: ``text-sft``.
+"""A causal language model LoRA-tuned through unsloth to write a text from its input: ``text-sft``.
 
-Trained on ``SFTTextExample`` samples, whose file is the text to write and
-whose features are the input it is written from (record 0053). Nothing in
-the loop belongs to one project: a 4-bit LoRA on every linear layer through
-unsloth, a loss on the completion only, and a base or instruct wrapping. A
-project brings its prompt template and system prompt as parameters, and
-its own checks as a metrics plugin.
-
-Two things are done to the examples on the way in, because only this model
-has the base model's tokens. A target over ``max_body_tokens`` is dropped,
-never cut: a cut example has no end token and teaches the model not to
-stop. And near-identical targets are collapsed within each side, with a
-validation target that nearly copies a training one dropped. Each is
-counted on the run (record 0036).
-
-A checkpoint is kept after every epoch, since a LoRA's best epoch is found
-by evaluating each. Behind the ``sft`` extra: unsloth, peft, datasets and
-bitsandbytes are imported only when a model is loaded. See
-``docs/adr/0054``.
+Trained on ``SFTTextExample`` samples, a checkpoint kept every epoch, behind
+the ``sft`` extra. See ``docs/adr/0053``, ``docs/adr/0054`` and ``docs/adr/0036``.
 """
 
-# unsloth and datasets resolve only with the sft extra, which every CI job
-# but the sft one leaves out; that one type-checks them as real imports.
+# The sft extra's imports are type-checked only by the CI job that has it.
 # pyright: reportMissingImports=false
 
 import inspect
@@ -56,19 +39,16 @@ from .sft_data import (
     read_target,
 )
 
-#: The base model each variant starts from when none is named: unsloth's
-#: 4-bit Llama 3.1 8B, text completion or chat.
+#: The base model each variant starts from when none is named.
 DEFAULT_BASE_MODELS = {
     "base": "unsloth/Meta-Llama-3.1-8B-bnb-4bit",
     "instruct": "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
 }
 
-#: Every linear layer of a Llama-shaped block, which is what a LoRA on
-#: "every linear layer" means for the models unsloth serves.
+#: Every linear layer of a Llama-shaped block.
 DEFAULT_LORA_TARGETS = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj")
 
-#: What follows the input in a base prompt, so the model knows where the
-#: text it writes begins.
+#: What follows the input in a base prompt, marking where the text begins.
 DEFAULT_RESPONSE_MARKER = "->\n"
 
 #: The settings a generate request may give, per output.
@@ -113,26 +93,13 @@ class TextSFT(MediaModel):
         generation: dict | None = None,
         generate_batch_size: int = 8,
     ):
-        """``prompt_template`` is a format string over the input fields, such
-        as ``"subject: {subject}\\n"``; the fields it names are this model's
+        """``prompt_template`` is a format string over the input fields, which become
         ``requires_features``.
 
-        ``variant`` is ``base``, text completion, or ``instruct``, a chat.
-        ``system_prompt`` and ``chat_template`` are the instruct variant's
-        only, and ``response_marker`` the base variant's only: given to the
-        other, each is refused rather than quietly unused. A base model has
-        no system turn, so an instruction for one goes in the template.
-
-        ``chat_template`` replaces the tokenizer's own: a Jinja template, or
-        the name of one of unsloth's (``llama-3``). Left out, the base
-        model's own is used, which comes with the model the run records.
-        ``pad_token`` names an existing token to pad with; left out, the
-        tokenizer's own, else its end token. ``revision`` pins the base
-        model; left out, the one loaded is resolved and recorded.
-
-        ``generation`` is the default for each generate setting:
-        ``temperature`` (0 is greedy), ``top_p`` and ``max_new_tokens``,
-        which defaults to ``max_body_tokens`` and ten more.
+        ``system_prompt`` and ``chat_template`` (a Jinja template or one of
+        unsloth's) are the instruct variant's, ``response_marker`` the base
+        variant's; the other refuses them. ``generation`` defaults each
+        generate setting; ``temperature`` 0 is greedy.
         """
         self.prompts = Prompts(
             variant,
@@ -178,18 +145,14 @@ class TextSFT(MediaModel):
         }
         self.generation = self.settings_for(generation or {})
         self.generate_batch_size = generate_batch_size
-        # Read from the built model, as the handler reads it. docs/adr/0011
+        # docs/adr/0011
         self.requires_features = self.prompts.fields
         self._model = None
         self._tokenizer = None
 
     def resolved_params(self) -> dict:
-        """Every parameter as this model uses it, its defaults filled in.
-
-        What a run records, so a changed default never changes what a
-        recorded run means; ``save`` keeps it, and ``load`` rebuilds from
-        it. ``revision`` is resolved when the base model is first loaded,
-        so ask after ``finetune``. See ``docs/adr/0054``.
+        """Every parameter as used, defaults filled in; ``revision`` is resolved on first load. See
+        ``docs/adr/0054``.
         """
         return {
             "prompt_template": self.prompts.template,
@@ -220,11 +183,8 @@ class TextSFT(MediaModel):
         }
 
     def settings_for(self, given: dict) -> dict:
-        """The settings an output is generated with: ``given`` over the defaults.
-
-        An unknown setting is refused, so a misspelt one is never silently
-        the default. What a generation record digests is this, not what
-        was asked for. See ``docs/adr/0053``.
+        """The settings an output is generated with: ``given`` over the defaults, an unknown one
+        refused. See ``docs/adr/0053``.
         """
         unknown = sorted(set(given) - set(SETTINGS))
         if unknown:
@@ -252,6 +212,7 @@ class TextSFT(MediaModel):
     def _load(self, saved: Path | None = None) -> None:
         """The base model, or a saved adapter on it, with its tokenizer set up."""
         _unsloth()
+        # The sft extra, imported where it is used so the module loads without it.
         from transformers import AutoTokenizer
         from unsloth import FastLanguageModel
 
@@ -269,14 +230,13 @@ class TextSFT(MediaModel):
                 tokenizer, self.variant, self.chat_template, self.pad_token, self.base_model
             )
         else:
-            # The tokenizer as trained, chat template and padding included
             tokenizer = AutoTokenizer.from_pretrained(str(saved))
         model.config.pad_token_id = tokenizer.pad_token_id
         self._model, self._tokenizer = model, tokenizer
 
     def _trainable(self):
         """The LoRA to train: new on the base model, or the one loaded, warm."""
-        from unsloth import FastLanguageModel
+        from unsloth import FastLanguageModel  # the sft extra
 
         if self._model is None:
             self._load()
@@ -290,9 +250,8 @@ class TextSFT(MediaModel):
                 random_state=self.seed,
             )
         else:
-            # Loaded from a checkpoint, which loads for inference. Declared
-            # through a wrapper of a method unsloth attaches at import, so
-            # pyright cannot see it
+            # A checkpoint loads for inference; this method is attached at import, unseen by
+            # pyright.
             FastLanguageModel.for_training(self._model)  # pyright: ignore[reportAttributeAccessIssue]
             for name, parameter in self._model.named_parameters():
                 if "lora_" in name:
@@ -304,12 +263,10 @@ class TextSFT(MediaModel):
     def prepare(
         self, train: list[Example], val: list[Example] | None, tokenizer
     ) -> tuple[list[dict], list[dict], dict[str, float]]:
-        """What is trained and validated on, encoded, and what was left out.
+        """What is trained and validated on, encoded, and what was left out, counted.
 
-        A target over the token budget, or whose prompt and target together
-        exceed ``max_seq_length``, is dropped, never cut. Near copies are
-        collapsed within each side, and a validation target that nearly
-        copies a training one is dropped. Every count is returned.
+        A target over budget is dropped, never cut: a cut example has no end
+        token and teaches the model not to stop. Near copies are collapsed per side.
         """
         counts: dict[str, float] = {}
         sides = {}
@@ -336,8 +293,7 @@ class TextSFT(MediaModel):
             counts[f"{side}_dropped_near_copy"] = float(len(fitting) - len(kept))
             sides[side] = [fitting[i] for i in kept]
 
-        # Collapsing after the split is a stopgap: a freeze draws first, so
-        # this guards against the leak rather than preventing it
+        # A freeze draws first, so this guards against a leak rather than preventing it.
         near_train = copies_of(
             [body for _, body, _ in sides["val"]],
             [body for _, body, _ in sides["train"]],
@@ -358,16 +314,17 @@ class TextSFT(MediaModel):
         on_epoch: EpochReport | None = None,
         save_checkpoint: SaveCheckpoint | None = None,
     ) -> dict[str, float]:
-        # Refused before anything is loaded. docs/adr/0054
+        # docs/adr/0014
         for example in [*train, *(val or [])]:
             self.prompts.values(example.features)
 
-        # First, so a missing extra is named as one
+        # First, so a missing extra is named as one.
         _unsloth()
         from datasets import Dataset
         from transformers import Trainer, TrainingArguments
         from unsloth import is_bfloat16_supported
 
+        # _shared imports torch at the top, so this module stays importable without the extra.
         from .._shared import seed_everything
 
         seed_everything(self.seed)
@@ -398,13 +355,12 @@ class TextSFT(MediaModel):
                     optim="adamw_8bit",
                     fp16=not bf16,
                     bf16=bf16,
-                    # Every step, so an epoch's loss is the mean of its steps
+                    # Every step, so an epoch's loss is the mean of its steps.
                     logging_steps=1,
-                    # Evaluated and kept by the callback, once an epoch
+                    # The callback evaluates and keeps, once an epoch.
                     eval_strategy="no",
                     save_strategy="no",
-                    # Only the loss: the logits of a whole validation side
-                    # over a large vocabulary do not fit in memory
+                    # A validation side's logits over the vocabulary do not fit in memory.
                     prediction_loss_only=True,
                     seed=self.seed,
                     report_to="none",
@@ -424,12 +380,10 @@ class TextSFT(MediaModel):
         seeds: list[int],
         on_batch: BatchReport | None = None,
     ) -> list[Generated]:
-        """One text per input, prompted exactly as at training.
+        """One text per input, prompted as at training, each row sampled with its own seed.
 
-        Outputs with the same settings and the same prompt length share a
-        batch, so nothing is padded: unsloth's fast generation corrupts
-        left-padded rows. Each row is sampled with its own seed, so an
-        output does not depend on what shared its batch.
+        A batch shares settings and prompt length, since unsloth's fast generation corrupts left-
+        padded rows.
         """
         if not len(inputs) == len(settings) == len(seeds):
             raise ValueError(
@@ -445,6 +399,7 @@ class TextSFT(MediaModel):
         if not inputs:
             return []
 
+        # The sft extra, imported where it is used so the module loads without it.
         import torch
         from transformers import LogitsProcessorList
         from unsloth import FastLanguageModel
@@ -469,7 +424,6 @@ class TextSFT(MediaModel):
                 padding=True,
                 add_special_tokens=False,
             ).to(model.device)
-            # A temperature of 0 is greedy, and draws nothing
             sampling = {}
             if chosen["temperature"] > 0:
                 draw = SeededSampling(
@@ -481,7 +435,7 @@ class TextSFT(MediaModel):
                     **encoded,
                     **sampling,
                     max_new_tokens=chosen["max_new_tokens"],
-                    # The draw is SeededSampling's; generate picks it greedily
+                    # The draw is SeededSampling's; generate picks it greedily.
                     do_sample=False,
                     temperature=None,
                     top_p=None,
@@ -500,9 +454,7 @@ class TextSFT(MediaModel):
     # -- checkpoints ---------------------------------------------------------
 
     def save(self, path: Path) -> None:
-        """One file, which is what a run's checkpoint is: the adapter, the
-        tokenizer as trained, and the parameters as used, in a tar.
-        """
+        """One tar: the adapter, the tokenizer as trained, and the parameters as used."""
         model, tokenizer = self._net()
         path = Path(path)
         with tempfile.TemporaryDirectory() as scratch:
@@ -513,8 +465,7 @@ class TextSFT(MediaModel):
             params.write_text(
                 json.dumps({"format": FORMAT, "params": self.resolved_params()}, indent=2) + "\n"
             )
-            # Written beside and moved into place, so a checkpoint read while
-            # it is being saved is the old one or the new one, never half
+            # Whole or absent. docs/adr/0026
             partial = path.with_name(path.name + ".partial")
             with tarfile.open(partial, "w") as tar:
                 tar.add(params, arcname="params.json")
@@ -532,8 +483,7 @@ class TextSFT(MediaModel):
                     f"{path} is a text-sft checkpoint of format {saved.get('format')}, "
                     f"and this one reads format {FORMAT}"
                 )
-            # The saved parameters win over the ones constructed with: they
-            # are what the adapter was trained under
+            # The saved parameters are what the adapter was trained under. docs/adr/0054
             self.__init__(**saved["params"])
             self._load(Path(scratch) / "model")
 
@@ -555,17 +505,14 @@ def _marker(variant: str, marker: str | None) -> str:
 def configure_tokenizer(
     tokenizer, variant: str, chat_template: str | None, pad_token: str | None, base_model: str
 ):
-    """The tokenizer as this model trains and generates with it.
-
-    For the instruct variant, its chat template: the one asked for, or its
-    own, and a tokenizer with neither is refused. Then its padding token,
-    which must be one it already has: a new one would have no embedding.
+    """The tokenizer as this model trains and generates with it: chat template, then a padding token
+    it already has.
     """
     if variant == "instruct":
         if chat_template is not None and ("{%" in chat_template or "{{" in chat_template):
             tokenizer.chat_template = chat_template
         elif chat_template is not None:
-            from unsloth.chat_templates import get_chat_template
+            from unsloth.chat_templates import get_chat_template  # the sft extra
 
             tokenizer = get_chat_template(tokenizer, chat_template=chat_template)
         elif not getattr(tokenizer, "chat_template", None):
@@ -582,7 +529,7 @@ def configure_tokenizer(
             )
         tokenizer.pad_token = pad_token
     elif tokenizer.pad_token is None:
-        # Safe because padding is masked by position, never by id
+        # Safe: padding is masked by position, never by id.
         tokenizer.pad_token = tokenizer.eos_token
     return tokenizer
 
@@ -593,19 +540,15 @@ def epoch_callback(
     on_epoch: EpochReport | None,
     save_checkpoint: SaveCheckpoint | None,
 ):
-    """What the trainer calls after each epoch: report it, keep it, and stop when asked.
+    """What the trainer calls after each epoch: evaluate, keep the checkpoint, report it, stop when
+    asked.
 
-    The epoch's loss is the mean of its steps', and its validation loss is
-    evaluated here, once an epoch. The checkpoint is kept before the epoch
-    is reported, so a caller told of epoch two can use ``epoch-2``. What
-    the last epoch reported stays on ``last``, the metrics ``finetune``
-    returns.
+    The last epoch's report stays on ``last``, which ``finetune`` returns.
     """
-    from transformers import TrainerCallback
+    from transformers import TrainerCallback  # the sft extra
 
     class Epochs(TrainerCallback):
         def __init__(self):
-            # The trainer this is given to, set once it exists
             self.trainer: Any = None
             self.done = 0
             self.losses: list[float] = []
@@ -626,7 +569,7 @@ def epoch_callback(
             self.last = {**reported, "epochs": float(self.done)}
             if save_checkpoint is not None:
                 save_checkpoint(f"epoch-{self.done}")
-            # An answer of True asks to stop after this epoch. docs/adr/0031
+            # docs/adr/0031
             if on_epoch is not None and on_epoch(self.done, epochs, dict(reported)):
                 control.should_training_stop = True
 
@@ -634,8 +577,9 @@ def epoch_callback(
 
 
 def stop_ids(tokenizer, model, prompts: Prompts) -> list[int]:
-    """The tokens an output ends on: the end token, the model's own, and
-    the first token of what follows a target as trained."""
+    """The tokens an output ends on: the end token, the model's own, and the first of what follows a
+    target.
+    """
     stop: set[int] = set()
     config = getattr(model, "generation_config", None)
     for source in (tokenizer.eos_token_id, getattr(config, "eos_token_id", None)):
@@ -672,11 +616,10 @@ def batches(keys: list, size: int) -> list[list[int]]:
 
 def _unsloth():
     """unsloth, imported after the workaround it needs on older GPUs."""
-    import torch
+    import torch  # the sft extra
 
-    # unsloth's fused loss (cut_cross_entropy) fails to compile its Triton
-    # kernel on Turing (compute 7.5, the 2080 Ti); returning logits takes
-    # the plain loss instead. Read when unsloth is imported, so set first.
+    # unsloth's fused loss will not compile its kernel below compute 8.0; read at import, so set
+    # first.
     if torch.cuda.is_available() and torch.cuda.get_device_capability() < (8, 0):
         os.environ.setdefault("UNSLOTH_RETURN_LOGITS", "1")
     try:
@@ -689,27 +632,18 @@ def _unsloth():
 
 
 def _across_versions(arguments: Callable, warmup_ratio: float) -> dict:
-    """The training arguments transformers 4 and 5 spell differently.
-
-    5 groups by length through ``train_sampling_strategy``, where 4 had
-    ``group_by_length``, and takes a warmup ratio as a ``warmup_steps``
-    below one, where 4 had ``warmup_ratio``.
-    """
+    """The training arguments transformers 4 and 5 spell differently."""
     if "train_sampling_strategy" in inspect.signature(arguments).parameters:
         return {"train_sampling_strategy": "group_by_length", "warmup_steps": warmup_ratio}
     return {"group_by_length": True, "warmup_ratio": warmup_ratio}
 
 
 def _resolved(base_model: str) -> str | None:
-    """The commit a model name points at now, so a run can be repeated.
-
-    None when it can't be asked (offline, or a local directory): the load
-    then uses whatever the cache holds.
-    """
+    """The commit a model name points at now, or None when it cannot be asked."""
     try:
-        from huggingface_hub import model_info
+        from huggingface_hub import model_info  # comes with the sft extra's transformers
 
         return model_info(base_model).sha
-    # Any failure to ask means "not pinned", never a failed run
+    # Not pinned, never a failed run.
     except Exception:
         return None

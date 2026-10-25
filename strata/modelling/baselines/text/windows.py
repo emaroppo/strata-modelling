@@ -16,10 +16,7 @@ DEFAULT_ENCODER = "distilbert-base-uncased"
 def read_text(path: str | Path) -> str:
     """A document exactly as stored, which is what span offsets count.
 
-    ``newline=""`` keeps ``\r\n`` as two characters: read in text mode it
-    becomes one, and every span after the first line ending in a document
-    ingested before text was canonical would point one character early per
-    line, in training and in prediction alike.
+    ``newline=""`` keeps ``\r\n`` as two characters, as the offsets do.
     """
     try:
         with open(path, encoding="utf-8", errors="replace", newline="") as f:
@@ -30,12 +27,7 @@ def read_text(path: str | Path) -> str:
 
 
 def tokens_touching(span, windows) -> list[tuple[int, int]]:
-    """Every token a span overlaps, across each window the document became.
-
-    Bisected rather than scanned: a dense document runs to hundreds of
-    spans over five hundred tokens, and this is asked once per span on
-    every dataset built.
-    """
+    """Every token a span overlaps, across each window the document became."""
     touched: list[tuple[int, int]] = []
     for window in windows:
         tokens = [(int(s), int(e)) for s, e in window if not (s == 0 and e == 0)]
@@ -43,28 +35,22 @@ def tokens_touching(span, windows) -> list[tuple[int, int]]:
             continue
         starts = [s for s, _ in tokens]
         ends = [e for _, e in tokens]
-        # First token reaching past the span's start, up to the first one
-        # starting at or after its end
+        # From the first token past the span's start to the first starting at or after its end.
         touched.extend(tokens[bisect_right(ends, span.start) : bisect_left(starts, span.end)])
     return touched
 
 
 class WindowDataset(Dataset):
-    """One item per *window*, not per document.
+    """One item per window, not per document; re-encoded per access rather than held in memory.
 
-    A document longer than the encoder's input becomes several training
-    items rather than a truncated one (``docs/adr/0014``). The index is built once by counting
-    each document's windows; ``__getitem__`` re-encodes its document and
-    returns the window asked for, which costs a tokenisation per access and
-    saves holding every padded window in memory at once.
+    See ``docs/adr/0014``.
     """
 
     def __init__(self, samples: list[Example], encode, scan):
         self.samples = samples
         self.encode = encode
         self.index: list[tuple[int, int]] = []
-        #: What was noticed while counting windows: supervision a target
-        #: loses on the way in. docs/adr/0036
+        #: Supervision a target loses on the way in (docs/adr/0036).
         self.diagnostics: Counter = Counter()
         for i, sample in enumerate(samples):
             windows, noticed = scan(read_text(sample.path), sample.target)
@@ -81,11 +67,8 @@ class WindowDataset(Dataset):
 
 
 class Windowed:
-    """Tokenisation into windows, shared by every text head.
-
-    ``window`` off means truncation at ``MAX_LENGTH``. ``offset_mapping`` is
-    character offsets into the *original* string for every window, so
-    nothing is rebased. See ``docs/adr/0014``.
+    """Tokenisation into windows, shared by every text head; offsets are into the original string.
+    See ``docs/adr/0014``.
     """
 
     MAX_LENGTH = 512
@@ -109,7 +92,7 @@ class Windowed:
         raise NotImplementedError
 
     def _trainable(self, target) -> bool:
-        """Whether this head can learn anything from a target. See the base."""
+        """Whether this head can learn anything from a target."""
         return True
 
     def _alignment(self, target, windows) -> dict[str, int]:
@@ -146,9 +129,8 @@ class Windowed:
         ]
 
     def _scan(self, text: str, target) -> tuple[int, dict[str, int]]:
-        """How many windows this document needs, and what it loses on the way in.
-
-        One tokenisation answering both. See ``docs/adr/0036``.
+        """How many windows this document needs, and what it loses on the way in. See
+        ``docs/adr/0036``.
         """
         encoded = self.tokenizer(
             text, truncation=True, return_offsets_mapping=True, **self._windowing()
@@ -157,6 +139,6 @@ class Windowed:
         if self.window is None:
             windows = [windows]
         if target is not None and not self._trainable(target):
-            # No windows, so no training items, and counted. docs/adr/0036
+            # docs/adr/0036
             return 0, {"empty_targets": 1}
         return len(windows), self._alignment(target, windows)

@@ -36,10 +36,7 @@ class Job(BaseModel):
 
 
 class Jobs:
-    """The rounds this host is running, and has run.
-
-    In memory. See ``docs/adr/0007``.
-    """
+    """The rounds this host is running, and has run, in memory. See ``docs/adr/0007``."""
 
     def __init__(self, runner):
         self._runner = runner
@@ -76,7 +73,7 @@ class Jobs:
             job.state = RUNNING
             job.stage = "starting"
             result = runner(request, report)
-            # Set before done. docs/adr/0007
+            # Set before the state, which a poller reads first. docs/adr/0007
             job.result = result
             job.stage = "finished"
             job.state = DONE

@@ -14,7 +14,7 @@ def tag_ids(classes: list[str], class_name: str) -> tuple[int, int]:
 def label_tokens(classes: list[str], offsets, spans) -> torch.Tensor:
     """One tag per token for a window, ``-100`` where a token carries no supervision."""
     labels = torch.zeros(len(offsets), dtype=torch.long)
-    # Padding and special tokens carry no supervision
+    # Padding and special tokens carry no supervision.
     labels[(offsets[:, 0] == 0) & (offsets[:, 1] == 0)] = -100
     for span in spans:
         if span.label not in classes:
@@ -24,8 +24,7 @@ def label_tokens(classes: list[str], offsets, spans) -> torch.Tensor:
         for t, (start, end) in enumerate(offsets.tolist()):
             if start == end == 0:
                 continue
-            # Overlap, not containment: a span that cuts a token still
-            # supervises it. docs/adr/0036
+            # Overlap, not containment: a span that cuts a token still supervises it. docs/adr/0036
             if start < span.end and end > span.start:
                 labels[t] = begin if first else inside
                 first = False
@@ -55,8 +54,7 @@ def decode_window(classes: list[str], text: str, logits: torch.Tensor, offsets) 
             current = {"labels": [class_name], "start": start, "end": end, "scores": [conf]}
             spans.append(current)
 
-    # Sorted as Spans sorts on the way in, so confidences are ordered to
-    # match. docs/adr/0004
+    # Sorted as Spans sorts, so confidences line up. docs/adr/0004
     found = sorted(spans, key=lambda s: (s["start"], s["end"]))
     return SpansPrediction(
         values=[
@@ -70,20 +68,10 @@ def decode_window(classes: list[str], text: str, logits: torch.Tensor, offsets) 
 
 
 def merge_windows(text: str, outputs: list) -> SpansPrediction:
-    """The windows' spans, with what the overlap said twice resolved to once.
+    """The windows' spans, two overlapping spans of one label merged into their union at the higher
+    confidence.
 
-    A document past the encoder's limit is read as several overlapping
-    windows, and an entity near a boundary is whole in one window and cut
-    in the next. Both used to survive, because only an exact match on
-    label and both offsets counted as the same entity: a name came back
-    as itself *and* as its own tail.
-
-    The label set this head accepts declares no overlapping regions
-    (``requires_schema``), so two spans of one label that overlap at all
-    cannot both be right. They are the same entity seen twice, and their
-    union is what it spans; the higher confidence carries. Spans of
-    different labels are left alone — which of them is right is not
-    something an overlap answers. See ``docs/adr/0014``.
+    Spans of different labels are left alone. See ``docs/adr/0014``.
     """
     if len(outputs) == 1:
         return outputs[0]
@@ -93,8 +81,6 @@ def merge_windows(text: str, outputs: list) -> SpansPrediction:
             key = (span.label, span.start, span.end)
             best[key] = max(best.get(key, 0.0), confidence)
 
-    # Per label, walk the spans in order and absorb each one that reaches
-    # back into the span before it.
     merged: list[tuple[str, int, int, float]] = []
     by_label: dict[str, list[tuple[int, int, float]]] = {}
     for (label, start, end), confidence in best.items():
@@ -111,8 +97,7 @@ def merge_windows(text: str, outputs: list) -> SpansPrediction:
         if run is not None:
             merged.append((label, *run))
 
-    # Sorted as Spans sorts on the way in, so confidences are ordered to
-    # match. docs/adr/0004
+    # Sorted as Spans sorts, so confidences line up. docs/adr/0004
     order = sorted(merged, key=lambda s: (s[1], s[2]))
     return SpansPrediction(
         values=[

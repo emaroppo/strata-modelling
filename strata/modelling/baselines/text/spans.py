@@ -1,21 +1,13 @@
-"""Entity-level scores for span predictions against a validation set.
-
-The arithmetic is strata-evaluation's ``entities`` task, the same the
-``evaluate`` stage runs; this only names the numbers the way a run records
-its own. See ``docs/adr/0035``.
+"""Entity-level scores for span predictions, by strata-evaluation's ``entities`` task. See
+``docs/adr/0035``.
 """
 
 from strata.evaluation.tasks import entities
 
 
 def span_scores(truth: list, predicted: list) -> dict[str, float]:
-    """Entity-level precision, recall and F1 over a validation set.
-
-    *Exact* requires the label and both offsets to agree; *partial* accepts
-    an overlap of the same label. Per class as well as overall.
-
-    ``truth`` and ``predicted`` are parallel lists, one entry per document,
-    each a list of spans.
+    """Exact and partial precision, recall and F1 over parallel lists of documents' spans, overall
+    and per class.
     """
     scores = entities.score(truth, predicted)
     exact, partial = scores.exact, scores.partial

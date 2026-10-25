@@ -1,10 +1,4 @@
-"""Transformer baselines for text: document classification and spans.
-
-Each fine-tunes a pretrained encoder from Hugging Face over the same
-plumbing, tokenisation into windows, a training loop and checkpointing,
-and differs in what a target is: a set of classes for the whole document,
-one class, or labelled character ranges inside it.
-"""
+"""Transformer baselines for text: multi-label and single-label classification, and spans."""
 
 from .classifier import TextClassifier
 from .multiclass import TextMulticlassClassifier

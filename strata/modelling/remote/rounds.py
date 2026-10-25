@@ -1,15 +1,19 @@
-"""Running a round, a scoring pass or a generation on this host.
-
-Materialise, train, record; fetch, predict; fetch, generate.
-"""
+"""Running a round, a scoring pass or a generation on this host. See ``docs/adr/0007``."""
 
 from pathlib import Path
 
+from sqlalchemy import select
+
+from strata.common.canonical import short_hash
 from strata.contracts import AnyPrediction, feature_digest
 
+from ..handlers import generate as run_generate
+from ..handlers import predict as run_predict
 from ..handlers import train as run_train
 from ..model import GenerationInput
 from ..requests import GenerateRequest, PredictRequest, TrainRequest
+from ..store import tables as t
+from ..store.predictions import PredictionCache
 from ..store.runs import RunStore
 from .checks import check_catalog, check_dataset, check_features, check_servable, check_split
 from .wire import (
@@ -31,11 +35,8 @@ def run_round(
     cache: Path | None = None,
     report=None,
 ) -> RoundResponse:
-    """Materialise a dataset version and train from it.
-
-    ``datasets`` is where versions are written, named by dataset and
-    version. See ``docs/adr/0007``.
-    """
+    """Materialise a dataset version under ``datasets`` and train from it. See ``docs/adr/0007``."""
+    # The catalog is the service extra's, and this layer's alone to know. docs/adr/0007
     from strata.catalog import ensure_materialised
 
     check_servable(request.model)
@@ -48,20 +49,18 @@ def run_round(
         if report is not None:
             report("materialising", done, total)
 
-    # The same reuse rule the laptop uses, because it is the same function,
-    # and with the project's features. docs/adr/0026
+    # docs/adr/0026
     result = ensure_materialised(
         catalog, request.dataset_id, datasets, features=specs, on_progress=tick, cache=cache
     )
     manifest, target, materialised = result.manifest, result.directory, result.fetched
 
-    # The caller's sides, when they are not the version's own, applied to a
-    # copy beside it by the same code the local split stage uses. docs/adr/0025
+    # The caller's sides, when not the version's own, applied to a copy beside it. docs/adr/0025
     if request.split is not None:
         sides = check_split(request.split, manifest)
         if sides is not None:
+            # The service extra; see above.
             from strata.catalog.stages import apply_sides
-            from strata.common.canonical import short_hash
 
             asked = request.split
             tag = short_hash(
@@ -86,7 +85,7 @@ def run_round(
     )
     params = {**request.params, **request.fresh_params} if previous is None else request.params
 
-    # Said before training rather than after. docs/adr/0031
+    # docs/adr/0031
     if report is not None:
         report("training")
 
@@ -117,19 +116,11 @@ def run_prediction(
     cache: Path,
     report=None,
 ) -> PredictionResponse:
-    """Score samples by content, fetching whatever bytes are missing.
-
-    See ``docs/adr/0006``.
-    """
-    from ..handlers import predict as run_predict
-    from ..store.predictions import PredictionCache
-
-    # Kept beside the runs. docs/adr/0006
+    """Score samples by content, fetching whatever bytes are missing. See ``docs/adr/0006``."""
     known = PredictionCache.beside(store)
-    # Keyed on the same inputs the caller's cache is; the digest is computed
-    # here from what arrived rather than sent. docs/adr/0006
+    # Computed here from what arrived, not sent. docs/adr/0006
     digests = {c: feature_digest(request.features.get(c, {})) for c in request.checksums}
-    # Named once, so the lookup and the pass agree on it. docs/adr/0054
+    # Named once, so the lookup and the pass agree. docs/adr/0054
     checkpoint = (
         request.checkpoint
         if request.checkpoint is not None
@@ -180,12 +171,8 @@ def run_generation(
 ) -> GenerationResponse:
     """Generate from inputs whose samples are named by content, fetching what is missing.
 
-    An input naming a sample this catalog does not know cannot be made, so
-    the whole request is refused rather than answered in part. See
-    ``docs/adr/0054``.
+    Refused whole when any input names a sample this catalog does not know. See ``docs/adr/0054``.
     """
-    from ..handlers import generate as run_generate
-
     wanted = list(
         dict.fromkeys(c for i in request.inputs for sums in i.samples.values() for c in sums)
     )
@@ -228,10 +215,6 @@ def run_generation(
 
 
 def metrics_of(store: RunStore, run_id: str) -> dict[str, float]:
-    from sqlalchemy import select
-
-    from ..store import tables as t
-
     with store.engine.connect() as conn:
         return {
             row.name: row.value

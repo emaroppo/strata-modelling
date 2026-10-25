@@ -1,14 +1,7 @@
 """What every modelling stage starts from: the context, the host, the identities, the manifest.
 
-``train`` takes a materialised directory and returns the run it recorded,
-here or on the modelling host — the request says which by whether the
-context names a host, and the record is the same shape either way.
-``evaluate`` scores one side of a directory with a recorded run, by one
-implementation (``docs/adr/0035``).
-
-Requests and records are plain models. Nothing here names a catalog: a
-directory is self-contained, and the remote branch sends a dataset's
-identity for the host to resolve against its own (``docs/adr/0008``).
+Nothing here names a catalog; the remote branch sends a dataset's identity instead. See
+``docs/adr/0008``.
 """
 
 from collections.abc import Callable
@@ -20,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, SerializerFunctionWrapHandler, model
 
 from strata.contracts import MANIFEST_NAME, Manifest
 
+from ..model import EpochReport
 from ..remote.client import Trainer
 from ..store.runs import RunStore
 
@@ -41,15 +35,10 @@ class Strict(BaseModel):
 
 
 class Keyed(Strict):
-    """A stage's request, dumped as it was before its later fields existed.
+    """A stage's request, dumped as it was before its ``later`` fields existed.
 
-    An experiment keys a stage on its request's dump, defaults and all
-    (``docs/adr/0037``), so a field added with a default would move every
-    key a ledger already holds and orphan the records under them. A field
-    named in ``later`` is left out of the dump while it holds its default:
-    a request that does not use it dumps, and is keyed, as it was before
-    the field existed. One that does use it is another request, and its
-    key says so.
+    A field named in ``later`` is left out of the dump while it holds its
+    default, so ledger keys made before it survive. See ``docs/adr/0037``.
     """
 
     #: Fields added after the stage's keys were in ledgers.
@@ -85,15 +74,13 @@ class Context:
     store: RunStore | None = None
     host: Host | None = None
     #: What a model reports as it trains, forwarded; see :data:`EpochReport`.
-    on_epoch: object = None
+    on_epoch: EpochReport | None = None
     #: A remote job's state as it is polled, for whoever is watching.
-    on_state: object = None
+    on_state: Callable[[dict], None] | None = None
     #: How to build the client, so a test can hand in a fake host.
     client: Callable[[str, str], Trainer] = Trainer
-    #: Where what a media model generates to be scored is kept, one file per
-    #: checkpoint named by its content, so a record names it rather than
-    #: holding it. None keeps the outputs in the record. See
-    #: ``docs/adr/0054``.
+    #: Where a media model's scored outputs are kept, one content-named file per checkpoint; None
+    #: keeps them in the record (``docs/adr/0054``).
     outputs: Path | None = None
 
 

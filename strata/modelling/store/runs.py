@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import NamedTuple
 
-from sqlalchemy import case, delete, func, insert, select
+from sqlalchemy import case, delete, func, insert, inspect, select
 from sqlalchemy.engine import Engine
 
 from strata.common import database
@@ -23,10 +23,8 @@ from .schema_version import MIGRATIONS
 
 
 def _over(dataset: str, catalog_id: str | None):
-    """The runs over a dataset, within a catalog when one is named.
-
-    A run with no catalog recorded matches, since null is unknown rather
-    than "some other". See ``docs/adr/0008``.
+    """The runs over a dataset, within a catalog when one is named; a null catalog matches. See
+    ``docs/adr/0008``.
     """
     where = t.run.c.dataset == dataset
     if catalog_id is not None:
@@ -42,21 +40,15 @@ def host_token(name: str | None = None) -> str:
 
 
 def new_run_id(origin: str | None = None) -> str:
-    """A run id: when it happened, and where.
-
-    Unique without coordination and legible on purpose. See
-    ``docs/adr/0005``.
-    """
+    """A run id: when it happened, and where. See ``docs/adr/0005``."""
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
     return f"{stamp}-{host_token(origin)}"
 
 
-#: What a run's one checkpoint is called when its model named none. See
-#: ``docs/adr/0054``.
+#: What a run's one checkpoint is called when its model named none (``docs/adr/0054``).
 FINAL = "final"
 
-#: A checkpoint's name becomes a file name, so it is kept to what is safe as
-#: one everywhere.
+#: A checkpoint's name becomes a file name, so it is kept to what is safe as one everywhere.
 CHECKPOINT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 
 
@@ -68,10 +60,8 @@ def now() -> datetime:
 def checkpoint_digest(path: Path) -> str | None:
     """SHA-256 over what a model's ``save`` wrote, or None where it wrote nothing.
 
-    A file is hashed as its bytes. A directory is hashed over every file
-    beneath it in order of relative path: the path, a NUL, the file's own
-    SHA-256 and a newline each. A checkpoint is named by this as well as
-    by its name (record 0053). See ``docs/adr/0054``.
+    A directory hashes each file by relative path: path, NUL, its SHA-256, newline. See
+    ``docs/adr/0054``.
     """
     path = Path(path)
     if path.is_file():
@@ -105,8 +95,6 @@ class Unchecked(NamedTuple):
 
 
 def _exists(engine: Engine) -> bool:
-    from sqlalchemy import inspect
-
     inspector = inspect(engine)
     return inspector.has_table("run") or inspector.has_table("alembic_version")
 
@@ -123,22 +111,22 @@ class RunStore:
     """Where runs, their metrics and their checkpoints live."""
 
     def __init__(self, engine: Engine, checkpoints: Path):
+        """Over ``engine``, keeping checkpoints under ``checkpoints``, which is made when one is
+        first written; constructing touches nothing.
+        """
         self.engine = engine
         self.checkpoints = Path(checkpoints)
-        self.checkpoints.mkdir(parents=True, exist_ok=True)
 
     @classmethod
     def open(cls, root: Path) -> "RunStore":
-        """The store under ``root``, which must exist. Nothing is created (``docs/adr/0018``).
-
-        A directory with no store is :class:`RunStoreMissing`; a store behind
-        the code is refused with the command that brings it forward.
+        """The store under ``root``, which must exist; :class:`RunStoreMissing` otherwise. Nothing
+        is created, not even an empty ``checkpoints/``. See ``docs/adr/0018``.
         """
         root = Path(root)
         path = root / "runs.db"
         if not path.exists():
             raise RunStoreMissing(f"No runs recorded at {root}. Run 'train' first.")
-        engine = database.engine(f"sqlite:///{path}")
+        engine = database.engine(f"sqlite:///{path}", foreign_keys=False)
         if not _exists(engine):
             raise RunStoreMissing(f"No runs recorded at {root}. Run 'train' first.")
         require_current(engine, MIGRATIONS, "modelling")
@@ -146,40 +134,43 @@ class RunStore:
 
     @classmethod
     def local(cls, root: Path) -> "RunStore":
-        """The store under ``root``, made if there is none and opened if there is.
-
-        For the callers that write: a round, a merge's target, the modelling
-        host. A caller that only consults uses :meth:`open`.
+        """The store under ``root``, made if there is none; a caller that only consults uses
+        :meth:`open`.
         """
         root = Path(root)
-        root.mkdir(parents=True, exist_ok=True)
-        engine = database.engine(f"sqlite:///{root / 'runs.db'}")
+        checkpoints = root / "checkpoints"
+        checkpoints.mkdir(parents=True, exist_ok=True)
+        # Foreign keys off: a parent may be in another store. docs/adr/0005
+        engine = database.engine(f"sqlite:///{root / 'runs.db'}", foreign_keys=False)
         if _exists(engine):
             require_current(engine, MIGRATIONS, "modelling")
-            return cls(engine, root / "checkpoints")
+            return cls(engine, checkpoints)
         t.metadata.create_all(engine)
         stamp_if_new(engine, MIGRATIONS)
-        return cls(engine, root / "checkpoints")
+        return cls(engine, checkpoints)
+
+    @classmethod
+    def scratch(cls, root: Path) -> "RunStore":
+        """An empty store in memory, with ``root`` as where its checkpoints would go: what a report
+        of a write that is not made is computed against. Nothing under ``root`` is touched.
+        """
+        engine = database.engine("sqlite://", foreign_keys=False)
+        t.metadata.create_all(engine)
+        return cls(engine, Path(root) / "checkpoints")
 
     def checkpoint_path(self, run_id: str, name: str = FINAL) -> Path:
-        """Where a run's checkpoint lives.
-
-        A run's one ``final`` checkpoint is where it always was; a run whose
-        model named its checkpoints keeps them in a directory of its own.
-        See ``docs/adr/0054``.
+        """Where a run's checkpoint lives: ``final`` as a file, named ones in a directory. See
+        ``docs/adr/0054``.
         """
-        # Ids are timestamps and hex, and names are checked, so both are
-        # already filename-safe
         if name == FINAL:
             return self.checkpoints / f"run_{run_id}.pt"
         return self.checkpoints / f"run_{run_id}" / name
 
     def staging(self) -> Path:
-        """A fresh directory for checkpoints saved before their run has an id.
+        """A fresh directory for checkpoints saved before their run has an id; :meth:`record` moves
+        them, the caller removes it.
 
-        Beside the checkpoints, so moving one under its run is a rename.
-        :meth:`record` moves them; the caller removes the directory. See
-        ``docs/adr/0054``.
+        See ``docs/adr/0054``.
         """
         path = self.checkpoints / ".staging" / uuid.uuid4().hex
         path.mkdir(parents=True)
@@ -205,25 +196,17 @@ class RunStore:
         saw: Sequence[Seen | tuple[str, str]] | None = None,
         checkpoints: Sequence[Checkpoint] | None = None,
     ) -> Run:
-        """Write a completed run, its final metrics, its curve, what it saw and what it kept.
+        """Write a completed run, its final metrics, its curve, what it saw and what it kept, in one
+        transaction.
 
-        The id is minted here. ``curve`` is ``(epoch, metrics)`` oldest
-        first, and ``saw`` is one :class:`Seen` per sample of the manifest
-        the run trained from, or a bare ``(checksum, side)`` where the
-        producer said nothing about batches or reviews. All are written
-        with the run: a run appears only once it finished, and a round that
-        died halfway leaves nothing. See ``docs/adr/0005``.
-
-        ``checkpoints`` are as saved, oldest first, wherever they were
-        written before the run had an id: each is moved under the run here.
-        Omitted, the run's ``checkpoint``, if it names one, is recorded as
-        its one, ``final``. See ``docs/adr/0054``.
+        The id is minted here. ``checkpoints`` are moved under the run;
+        omitted, the run's ``checkpoint`` is recorded as ``final``. See ``docs/adr/0005`` and
+        ``docs/adr/0054``.
         """
         origin = run.origin or socket.gethostname()
         run_id = run.id or new_run_id(origin)
         with self.engine.begin() as conn:
             if checkpoints is None:
-                # Recorded where it is: the caller put it there
                 kept = (
                     [
                         Checkpoint(
@@ -237,8 +220,7 @@ class RunStore:
                     else []
                 )
             else:
-                # Moved inside the run's transaction, so a move that fails
-                # leaves no run
+                # Inside the transaction, so a failed move leaves no run.
                 kept = self._keep(run_id, checkpoints)
             last = kept[-1].path if kept else None
             conn.execute(
@@ -290,10 +272,8 @@ class RunStore:
         )
 
     def _keep(self, run_id: str, saved: Sequence[Checkpoint]) -> list[Checkpoint]:
-        """Each checkpoint moved to where its run keeps it, as recorded.
-
-        A checkpoint already where it belongs, or with nothing on disk, is
-        recorded where it is.
+        """Each checkpoint moved to where its run keeps it; one already there, or with no file, is
+        recorded as is.
         """
         names = [c.name for c in saved]
         twice = sorted({n for n in names if names.count(n) > 1})
@@ -312,10 +292,7 @@ class RunStore:
         return kept
 
     def curve(self, run_id: str) -> list[tuple[int, dict[str, float]]]:
-        """What a run reported as it trained, oldest epoch first.
-
-        Separate from :meth:`get`. See ``docs/adr/0005``.
-        """
+        """What a run reported as it trained, oldest epoch first. See ``docs/adr/0005``."""
         with self.engine.connect() as conn:
             rows = conn.execute(
                 select(t.metric.c.epoch, t.metric.c.name, t.metric.c.value)
@@ -346,8 +323,7 @@ class RunStore:
                     .order_by(t.checkpoint.c.saved_at, t.checkpoint.c.id)
                 )
             ]
-            # A comprehension, not dict(rows): a result has keys(), so dict()
-            # would read it as a mapping and fail
+            # Not dict(rows): a result has keys(), so dict() would read it as a mapping.
             metrics: dict[str, float] = {  # noqa: C416
                 name: value
                 for name, value in conn.execute(
@@ -370,8 +346,7 @@ class RunStore:
             params=row.params or {},
             classes=row.classes or [],
             checkpoint=Path(row.checkpoint) if row.checkpoint else None,
-            # A run whose column some older writer set, with no row beside
-            # it, still has its one. docs/adr/0054
+            # An older writer set the column with no row beside it. docs/adr/0054
             checkpoints=kept
             or (
                 [Checkpoint(name=FINAL, path=Path(row.checkpoint), saved_at=row.created_at)]
@@ -382,11 +357,7 @@ class RunStore:
         )
 
     def saw(self, run_id: str) -> dict[str, list[str]]:
-        """Which side each sample was on for this run: checksums by side.
-
-        Every side is present, empty or not, so a run with no holdout reads
-        as one rather than as a missing key.
-        """
+        """Which side each sample was on for this run: checksums by side, every side present."""
         sides: dict[str, list[str]] = {"train": [], "val": [], "holdout": []}
         with self.engine.connect() as conn:
             rows = conn.execute(
@@ -401,11 +372,7 @@ class RunStore:
     def unchecked(self, run_id: str) -> list[Unchecked]:
         """How much of what this run saw nobody checked, per side and per batch.
 
-        One row per side and import batch, with how many samples it held
-        and how many of those carried a label a person never vouched for.
-        A sample whose manifest said nothing about review counts towards
-        neither, since unknown is not unreviewed (``docs/adr/0005``). Empty
-        for a run that recorded nothing.
+        A sample whose manifest said nothing about review counts as neither. See ``docs/adr/0005``.
         """
         unreviewed = func.sum(case((t.run_sample.c.reviewed.is_(False), 1), else_=0))
         with self.engine.connect() as conn:
@@ -440,14 +407,10 @@ class RunStore:
     def latest(
         self, dataset: str, catalog_id: str | None = None, since_version: int | None = None
     ) -> Run | None:
-        """The newest run over a dataset — what a warm start continues from.
+        """The newest run over a dataset, what a warm start continues from.
 
-        Scoped to a catalog when one is given; a run with no catalog
-        recorded matches, since null is unknown. See ``docs/adr/0008``.
-
-        ``since_version`` is the version the dataset's sides descend from:
-        a run over an earlier version is not continued, nor is one that
-        recorded no version. See ``docs/adr/0024``.
+        Scoped to a catalog when given (``docs/adr/0008``); ``since_version``
+        leaves out runs over earlier versions (``docs/adr/0024``).
         """
         where = _over(dataset, catalog_id)
         if since_version is not None:
@@ -456,7 +419,7 @@ class RunStore:
             run_id = conn.execute(
                 select(t.run.c.id)
                 .where(where)
-                # By time; the id breaks a tie. docs/adr/0005
+                # docs/adr/0005
                 .order_by(t.run.c.created_at.desc(), t.run.c.id.desc())
                 .limit(1)
             ).scalar_one_or_none()
@@ -465,10 +428,8 @@ class RunStore:
     def history(
         self, dataset: str, metric: str, catalog_id: str | None = None
     ) -> list[tuple[str, int, float]]:
-        """``(run id, dataset version, value)`` for one metric, oldest first.
-
-        Scoped to a catalog when one is given, on the rule ``latest`` uses.
-        See ``docs/adr/0008``.
+        """``(run id, dataset version, value)`` for one metric, oldest first, scoped as ``latest``
+        is. See ``docs/adr/0008``.
         """
         with self.engine.connect() as conn:
             return [
@@ -481,18 +442,13 @@ class RunStore:
                         & (t.metric.c.name == metric)
                         & (t.metric.c.epoch.is_(None))
                     )
-                    # Oldest first, by when rather than by id. docs/adr/0005
+                    # docs/adr/0005
                     .order_by(t.run.c.created_at, t.run.c.id)
                 ).all()
             ]
 
     def metric_names(self, dataset: str, catalog_id: str | None = None) -> list[str]:
-        """Which metrics this dataset's runs actually recorded.
-
-        Models report what they like — accuracy for a classifier, span F1
-        for a tagger — so a caller asking for one that is absent is better
-        told what is there than guessed at.
-        """
+        """Which metrics this dataset's runs recorded."""
         with self.engine.begin() as conn:
             rows = conn.execute(
                 select(t.metric.c.name)
@@ -503,10 +459,7 @@ class RunStore:
         return sorted(row.name for row in rows)
 
     def chain(self, run_id: str) -> list[Run]:
-        """A run and everything it continued from, oldest first.
-
-        See ``docs/adr/0005``.
-        """
+        """A run and everything it continued from, oldest first. See ``docs/adr/0005``."""
         walked: list[Run] = []
         seen: set[str] = set()
         current = self.get(run_id)

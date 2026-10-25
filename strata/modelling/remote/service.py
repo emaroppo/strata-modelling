@@ -1,7 +1,10 @@
 """The HTTP app: routes over the jobs, the checks and the run store, built from the environment."""
 
+import hmac
 import os
 from pathlib import Path
+
+from strata.common.service import serve
 
 from ..plugins.registry import available
 from ..store.runs import RunStore
@@ -27,6 +30,7 @@ def _required(name: str, why: str) -> str:
 
 def build():
     """The app, from the environment. Raises if anything essential is absent."""
+    # The service extra: fastapi, and the catalog this layer alone may know (docs/adr/0007).
     from fastapi import Depends, FastAPI, Header, HTTPException
 
     from strata.catalog import Catalog, CatalogError
@@ -38,8 +42,7 @@ def build():
     )
     from strata.catalog.config import CatalogConfigError, host_catalog, open_catalog
 
-    # The CLI's own config.toml, from the file $STRATA_CONFIG names; its
-    # default is the catalog this host trains from. docs/adr/0019
+    # The same config file the CLI reads; its default catalog is the one served. docs/adr/0019
     try:
         catalog_name, catalog_config = host_catalog()
     except CatalogConfigError as e:
@@ -51,22 +54,17 @@ def build():
     cache = Path(os.environ["STRATA_BLOBS_CACHE"]) if os.environ.get("STRATA_BLOBS_CACHE") else None
 
     def catalog_for() -> Catalog:
-        # Per request rather than once, by the same code the CLI uses.
-        # docs/adr/0019
+        # Per request rather than once. docs/adr/0019
         return open_catalog(catalog_config)
 
     def authorise(authorization: str = Header(default="")) -> None:
-        import hmac
-
         offered = authorization.removeprefix("Bearer ").strip()
-        # Constant time: a comparison that returns early leaks the token a
-        # character at a time to anyone able to measure it
+        # Constant time, so the comparison leaks nothing about the token.
         if not hmac.compare_digest(offered, token):
             raise HTTPException(status_code=403, detail="Bad or missing token.")
 
     def spoken(x_strata_protocol: str = Header(default="")) -> None:
-        # 426: the request is well formed, and needs a matching release to
-        # be understood. Checked on every call. docs/adr/0007
+        # 426: well formed, and needs a matching release to be understood. docs/adr/0007
         if x_strata_protocol != str(PROTOCOL):
             asked = f"is protocol {x_strata_protocol}" if x_strata_protocol else "names none"
             raise HTTPException(
@@ -79,9 +77,7 @@ def build():
     served: dict[str, str | None] = {}
 
     def served_catalog_id() -> str:
-        # Memoised: a catalog's identity does not change under a running
-        # host, and the alternative is a connection per submitted round
-        # spent asking a question with one answer.
+        # Memoised: a catalog's identity does not change under a running host.
         if "id" not in served:
             served["id"] = catalog_for().id
         return str(served["id"])
@@ -90,11 +86,23 @@ def build():
         return run_round(request, catalog_for(), store, datasets, cache, report=report)
 
     jobs = Jobs(run_one)
+
+    def _submit(request, runner=None, check=lambda: None) -> Job:
+        """``check``, then the job queued; a busy host is 409, a refusal 400 (``docs/adr/0007``)."""
+        try:
+            check()
+            return jobs.submit(request, runner=runner)
+        except BusyError as e:
+            # 409: the request is fine, the host is not free.
+            raise HTTPException(status_code=409, detail=str(e)) from None
+        except ServiceError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
+
     app = FastAPI(title="strata modelling", docs_url=None, redoc_url=None)
 
     @app.get("/healthz")
     def healthz() -> dict:
-        # Unauthenticated, so a laptop can check before sending anything. docs/adr/0007
+        # Unauthenticated, so a caller can check before sending anything. docs/adr/0007
         served = {"name": catalog_name, "id": None}
         try:
             served["id"] = served_catalog_id()
@@ -110,8 +118,9 @@ def build():
     @app.post("/round", dependencies=[Depends(authorise), Depends(spoken)], status_code=202)
     def round_(request: RoundRequest) -> Job:
         """Accept a round and return the job. It runs after this responds."""
-        try:
-            # Before accepting, not inside the job. docs/adr/0007
+
+        def checked() -> None:
+            # Checked before accepting, not inside the job. docs/adr/0007
             check_catalog(request.catalog_id, served_catalog_id())
             try:
                 found = catalog_for().datasets.named(request.dataset_id)
@@ -119,12 +128,8 @@ def build():
                 raise ServiceError(str(e)) from None
             check_dataset(request, found)
             check_features(request)
-            return jobs.submit(request)
-        except BusyError as e:
-            # 409 rather than 400: the request is fine, the host is not free
-            raise HTTPException(status_code=409, detail=str(e)) from None
-        except ServiceError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from None
+
+        return _submit(request, check=checked)
 
     @app.post("/predict", dependencies=[Depends(authorise), Depends(spoken)], status_code=202)
     def predict_(request: PredictionRequest) -> Job:
@@ -141,12 +146,7 @@ def build():
         def run_it(req, report):
             return run_prediction(req, catalog_for(), store, cache_dir, report)
 
-        try:
-            return jobs.submit(request, runner=run_it)
-        except BusyError as e:
-            raise HTTPException(status_code=409, detail=str(e)) from None
-        except ServiceError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from None
+        return _submit(request, run_it)
 
     @app.post("/generate", dependencies=[Depends(authorise), Depends(spoken)], status_code=202)
     def generate_(request: GenerationRequest) -> Job:
@@ -162,19 +162,13 @@ def build():
         def run_it(req, report):
             return run_generation(req, catalog_for(), store, cache_dir, report)
 
-        try:
-            return jobs.submit(request, runner=run_it)
-        except BusyError as e:
-            raise HTTPException(status_code=409, detail=str(e)) from None
-        except ServiceError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from None
+        return _submit(request, run_it)
 
     @app.get("/jobs/{job_id}", dependencies=[Depends(authorise), Depends(spoken)])
     def get_job(job_id: str) -> Job:
         job = jobs.get(job_id)
         if job is None:
-            # A restart loses running jobs; a completed round is in the run
-            # store. docs/adr/0007
+            # Jobs are in memory; a finished round is in the run store. docs/adr/0007
             raise HTTPException(
                 status_code=404,
                 detail=f"No job {job_id}. Jobs do not survive a restart of this host; "
@@ -184,12 +178,7 @@ def build():
 
     @app.get("/runs/latest", dependencies=[Depends(authorise), Depends(spoken)])
     def latest_run(dataset: str, catalog: str | None = None) -> dict:
-        """The newest run over a dataset, in this host's numbering.
-
-        A caller cannot work this out for itself: a run is minted where it
-        happens, and the caller's own store holds the runs made there, not
-        the ones made here.
-        """
+        """The newest run over a dataset, in this host's numbering. See ``docs/adr/0005``."""
         run = store.latest(dataset, catalog)
         if run is None:
             raise HTTPException(status_code=404, detail=f"No runs over {dataset!r} here")
@@ -207,6 +196,4 @@ def build():
 
 def main() -> None:
     """Entry point. Serves until stopped."""
-    from strata.common.service import serve
-
     serve(build, prog="strata-modelling", port=8082, error=ServiceError)

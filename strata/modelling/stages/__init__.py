@@ -1,12 +1,7 @@
-"""Modelling's stages: training and scoring as an experiment asks for them.
+"""Modelling's stages: ``train`` records a run, here or on a host; ``evaluate`` scores one with the
+tasks asked.
 
-``train`` takes a materialised directory and returns the run it recorded,
-here or on the modelling host — the request says which by whether the
-context names a host, and the record is the same shape either way.
-``evaluate`` scores one side of a directory with a recorded run, by one
-implementation (``docs/adr/0035``), at every checkpoint the run kept, and a
-media model's by what it generates (``docs/adr/0054``). Requests and records
-are plain models; nothing here names a catalog.
+See ``docs/adr/0035``, ``docs/adr/0037`` and ``docs/adr/0054``.
 """
 
 from strata.common.stages import Stage
@@ -39,11 +34,8 @@ from .train import TrainRecord, TrainStageRequest, train
 
 STAGES = (
     Stage("train", "1", (DATASET_DIR,), RUN, train),
-    # 2: exact_match rather than accuracy, and per-class scores. docs/adr/0035
-    # 3: the tasks asked, by strata-evaluation, each with its identity. docs/adr/0042
-    # Still 3 with every checkpoint scored and a media model generated from:
-    # a run with one checkpoint scores as it did, and a request that names
-    # none of the later fields is keyed as it was. docs/adr/0054
+    # 3: tasks with identities; a request naming no later field keys as before. docs/adr/0042,
+    # docs/adr/0054
     Stage("evaluate", "3", (DATASET_DIR, RUN), METRICS, evaluate),
 )
 

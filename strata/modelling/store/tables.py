@@ -27,37 +27,27 @@ metadata = MetaData()
 run = Table(
     "run",
     metadata,
-    # A timestamp and a host token, minted where the run happened; unique
-    # across stores without coordination. See docs/adr/0005.
+    # A timestamp and a host token, unique across stores without coordination. docs/adr/0005
     Column("id", String(40), primary_key=True),
-    # What this run continued from. Null for a cold start. docs/adr/0005
+    # Null for a cold start. docs/adr/0005
     Column("parent_run_id", ForeignKey("run.id"), nullable=True),
-    # Which machine trained it, by name; provenance, where the id's host
-    # token is for uniqueness. docs/adr/0005
+    # Which machine trained it. docs/adr/0005
     Column("origin", String(64), nullable=True),
-    # Which catalog the dataset belongs to; a dataset name means something
-    # within one. Null is unknown, not "some other". See docs/adr/0008.
+    # Which catalog the dataset belongs to; null is unknown, not "some other". docs/adr/0008
     Column("catalog_id", String(64), nullable=True),
-    # Lineage back into the catalog: these three resolve to the exact
-    # samples and annotations behind the checkpoint.
+    # Lineage back into the catalog; the version is null when none describes the data.
     Column("dataset", String(255), nullable=False),
-    # Null when no dataset version describes what the run trained on.
     Column("dataset_version", Integer, nullable=True),
     Column("label_set", String(255), nullable=False),
     Column("model", String(255), nullable=False),
-    # Bumped when a change makes old checkpoints unreadable. Recorded per
-    # run. docs/adr/0005
+    # docs/adr/0005
     Column("model_version", String(32), nullable=False),
     Column("params", JSON, nullable=True),
-    # The class list *as trained*, by position: what the checkpoint encodes.
-    # See docs/adr/0005.
+    # The class list as trained, by position. docs/adr/0005
     Column("classes", JSON, nullable=False),
-    # The run's last checkpoint, kept beside the table of all of them so a
-    # reader that wants only that one need not join. docs/adr/0054
+    # The run's last checkpoint, denormalised so a reader need not join. docs/adr/0054
     Column("checkpoint", Text, nullable=True),
-    # Which experiment file asked for this run, by the file's hash. Null for
-    # a run nothing orchestrated. The trial is in the ledger, not on the run.
-    # docs/adr/0005
+    # The experiment file that asked, by hash; the trial is in the ledger, not here. docs/adr/0005
     Column("experiment_id", String(64), nullable=True),
     Column("created_at", DateTime, server_default=func.now()),
     Index("ix_run_dataset", "dataset", "dataset_version"),
@@ -65,37 +55,31 @@ run = Table(
 )
 
 
-#: What a run saw: which side each sample of its manifest was on, whether
-#: the sides were inherited or drawn. See docs/adr/0005.
+#: What a run saw: which side each sample of its manifest was on (docs/adr/0005).
 run_sample = Table(
     "run_sample",
     metadata,
     Column("run_id", ForeignKey("run.id", ondelete="CASCADE"), primary_key=True),
     Column("checksum", String(64), primary_key=True),
     Column("side", String(8), nullable=False),
-    #: Which import the label arrived in, and whether a person vouched for
-    #: it, as the manifest said. Null where the manifest did not say, which
-    #: is not the same as False. See docs/adr/0005.
+    #: The label's import batch and whether a person vouched for it; null is "not said", not False
+    #: (docs/adr/0005).
     Column("batch", String(64), nullable=True),
     Column("reviewed", Boolean, nullable=True),
 )
 
 
-#: Every checkpoint a run kept, oldest first: one per call a model made to
-#: ``save_checkpoint``, or one named ``final`` for a model that made none.
-#: See docs/adr/0005 and docs/adr/0054.
+#: Every checkpoint a run kept, oldest first; ``final`` for a model that named none (docs/adr/0054).
 checkpoint = Table(
     "checkpoint",
     metadata,
     Column("id", Integer, primary_key=True),
     Column("run_id", ForeignKey("run.id", ondelete="CASCADE"), nullable=False),
-    # As the model named it, ``epoch-2``; unique within the run.
+    # As the model named it; unique within the run.
     Column("name", String(64), nullable=False),
-    # Null where the file is not in this store: a run merged in without its
-    # checkpoints keeps the record of what it saved. docs/adr/0005
+    # Null where the file is not in this store. docs/adr/0005
     Column("path", Text, nullable=True),
-    # SHA-256 over what the model wrote, by checkpoint_digest. Null where
-    # it wrote nothing to hash.
+    # By checkpoint_digest; null where the model wrote nothing.
     Column("digest", String(64), nullable=True),
     Column("saved_at", DateTime, nullable=False),
     UniqueConstraint("run_id", "name", name="uq_checkpoint_run_name"),
@@ -115,21 +99,18 @@ metric = Table(
 )
 
 
-#: What a run said about a sample, kept so it need not be asked twice.
-#: Nothing here is ever invalidated: the key names every input, the
-#: checkpoint among them. See docs/adr/0006 and docs/adr/0054.
+#: What a run said about a sample; the key names every input, so nothing is invalidated
+#: (docs/adr/0006, docs/adr/0054).
 prediction = Table(
     "prediction",
     metadata,
     Column("run_id", String(40), primary_key=True),
-    # Which of the run's checkpoints, by name. Empty for a run that kept
-    # none. docs/adr/0054
+    # By name; empty for a run that kept none. docs/adr/0054
     Column("checkpoint", String(64), primary_key=True, server_default=""),
     Column("checksum", String(64), primary_key=True),
-    # The third input: what the model was told about the sample. Empty
-    # where a project declares no features.
+    # What the model was told about the sample; empty where no features are declared.
     Column("feature_digest", String(64), primary_key=True, server_default=""),
-    # The value as the model produced it, stored whole. See docs/adr/0006.
+    # Stored whole. docs/adr/0006
     Column("value", Text, nullable=False),
     Column("made_at", DateTime, server_default=func.now()),
 )

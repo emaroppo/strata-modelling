@@ -9,7 +9,7 @@ from torch.utils.data import Dataset
 
 from ...model import Example
 
-# Video-extracted frames are occasionally cut short; decode what's there
+# Frames cut from video are sometimes truncated; decode what is there.
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
@@ -17,8 +17,7 @@ def load_rgb(path: str | Path, draft_size: int | None = None) -> Image.Image:
     try:
         img = Image.open(path)
         if draft_size is not None:
-            # JPEG-only fast path: decode at reduced scale straight from the
-            # DCT domain; PIL picks the smallest scale still >= draft_size
+            # JPEG fast path: PIL decodes at the smallest scale still >= draft_size.
             img.draft("RGB", (draft_size, draft_size))
         return img.convert("RGB")
     except OSError as e:
@@ -27,12 +26,7 @@ def load_rgb(path: str | Path, draft_size: int | None = None) -> Image.Image:
 
 
 class LetterboxSquash:
-    """Resize to a square, splitting the aspect gap between distortion and padding.
-
-    The image is squashed by at most ``max_distortion``; whatever aspect
-    difference remains is letterboxed with black bands. For 16:9 input and
-    max_distortion=1.4 the content fills ~79% of the square.
-    """
+    """Resize to a square: squash by at most ``max_distortion``, letterbox the rest."""
 
     def __init__(self, size: int, max_distortion: float = 1.4):
         self.size = size
@@ -80,7 +74,6 @@ class ImageDataset(Dataset):
         if self.target_fn is None:
             raise RuntimeError("ImageDataset needs a target_fn to train on")
         if sample.target is None:
-            # Only a media model's examples come without one. docs/adr/0054
             raise RuntimeError(f"{sample.path} has no target to train on")
         return image, self.target_fn(sample.target.values, self.class_to_idx)
 

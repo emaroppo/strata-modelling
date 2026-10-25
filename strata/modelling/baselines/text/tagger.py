@@ -12,19 +12,15 @@ from .windows import tokens_touching
 
 
 class TextSpanTagger(TransformerBase):
-    """Span labelling as token classification, in BIO tagging.
-
-    Character offsets are what the schema stores, so targets are aligned to
-    tokens on the way in and decoded back to character ranges on the way
-    out; the tokenizer's offset mapping is what makes both directions
-    exact.
+    """Span labelling as token classification, in BIO tagging, aligned through the tokenizer's
+    offset mapping.
     """
 
     label_type = "span"
     version = "1"
 
     def _label_count(self) -> int:
-        # O, plus B- and I- for each class
+        # O, plus B and I for each class.
         return 1 + 2 * len(self.classes)
 
     def _build_model(self, num_labels: int):
@@ -33,11 +29,8 @@ class TextSpanTagger(TransformerBase):
         ).to(self.device)
 
     def requires_schema(self, schema) -> None:
-        """What BIO cannot say, refused before a round rather than during it.
-
-        A tag per token means one thing per token. A region carrying two
-        labels loses the second; the later of two overlapping regions
-        overwrites the earlier. See ``docs/adr/0014``.
+        """Refuse overlapping or multi-label regions, which one tag per token cannot say. See
+        ``docs/adr/0014``.
         """
         cannot = []
         if getattr(schema, "overlapping", False):
@@ -52,13 +45,7 @@ class TextSpanTagger(TransformerBase):
             )
 
     def _alignment(self, target, windows) -> dict[str, int]:
-        """What this document's spans lose against the tokenizer.
-
-        ``spans_unaligned`` counts spans that reached no token;
-        ``spans_inexact`` spans whose characters do not sit on token
-        boundaries, which train but decode to whole tokens. See
-        ``docs/adr/0036``.
-        """
+        """Spans that reached no token, and spans off token boundaries. See ``docs/adr/0036``."""
         spans = [
             span
             for span in (target.values if target is not None else [])
@@ -85,12 +72,7 @@ class TextSpanTagger(TransformerBase):
         }
 
     def _evaluate(self, samples: list) -> dict:
-        """Loss, and the entity-level numbers a person can read.
-
-        Scored from :meth:`predict` rather than from the validation loop's
-        logits, until the ``evaluate`` stage scores spans. See
-        ``docs/adr/0035``.
-        """
+        """Loss, and entity-level scores from :meth:`predict`. See ``docs/adr/0035``."""
         metrics = super()._evaluate(samples)
         try:
             predicted = self.predict([sample.path for sample in samples])
@@ -100,8 +82,7 @@ class TextSpanTagger(TransformerBase):
             ]
             metrics.update(span_scores(truth, [list(p.values) for p in predicted]))
         finally:
-            # predict() leaves the model in eval mode, and finetune carries
-            # on training after this returns.
+            # predict() leaves the model in eval mode, and finetune carries on.
             self._net().train()
         return metrics
 

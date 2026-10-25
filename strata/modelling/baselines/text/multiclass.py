@@ -10,17 +10,12 @@ from .classifier import TextClassifier, _by_class
 
 
 class TextMulticlassClassifier(TextClassifier):
-    """Single-label document classification: the classes are exclusive.
-
-    The same encoder, training loop and windowing as :class:`TextClassifier`.
-    Only the loss, the target encoding and the decoding differ.
-    """
+    """Single-label document classification: the classes are exclusive."""
 
     version: ClassVar[str] = "1"
     problem_type: ClassVar[str] = "single_label_classification"
 
-    #: "any" is the union, not an answer a single-label head may give.
-    #: docs/adr/0014
+    #: No "any": the union is not an answer a single-label head may give (docs/adr/0014).
     AGGREGATIONS: ClassVar[tuple[str, ...]] = ("max", "mean")
 
     def requires_schema(self, schema) -> None:
@@ -33,21 +28,15 @@ class TextMulticlassClassifier(TextClassifier):
             )
 
     def _trainable(self, target) -> bool:
-        # "None of these" is not one this head can represent: counted rather
-        # than encoded as class zero. docs/adr/0036
+        # An empty target is counted, not encoded as class zero. docs/adr/0036
         return bool(getattr(target, "values", None))
 
     def _item(self, fields: dict, text: str, offsets, target) -> dict:
-        # A class index rather than a multi-hot row, which is what
-        # cross-entropy takes. Every window carries the document's class.
         named = [n for n in (target.values if target is not None else []) if n in self.classes]
         index = self.classes.index(named[0]) if named else -100
         return {
             **fields,
-            # -100 is cross-entropy's ignore index. Unreachable in practice —
-            # a target with nothing in it contributes no windows — and here
-            # so that items assembled by hand get no supervision rather than
-            # the wrong supervision.
+            # -100 is cross-entropy's ignore index, so an empty target gets no supervision.
             "labels": torch.tensor(index, dtype=torch.long),
             "offsets": offsets,
         }
@@ -60,18 +49,13 @@ class TextMulticlassClassifier(TextClassifier):
         )
 
     def _merge(self, text: str, outputs: list) -> ChoicesPrediction:
-        """One class for the document, from one class per window.
-
-        Each window has already been decoded to its own winner. See
-        ``docs/adr/0014``.
-        """
+        """One class for the document, from one class per window. See ``docs/adr/0014``."""
         if len(outputs) == 1:
             return outputs[0]
         scores = _by_class(outputs)
         if self.window_aggregation == "mean":
-            # Divided by every window, not just the ones that named it, so
-            # a class that won once in twenty does not outrank one that won
-            # steadily
+            # Divided by every window, so a class that won once does not outrank one that won
+            # steadily.
             combined = {name: sum(values) / len(outputs) for name, values in scores.items()}
         else:
             combined = {name: max(values) for name, values in scores.items()}

@@ -1,11 +1,7 @@
 """Turning a model name into a class.
 
-Two paths, and the name says which. A short name resolves through the
-``strata.models`` entry point group; anything containing ``:`` is a direct
-reference, ``module:Class`` or ``file.py:Class``. See ``docs/adr/0034``.
-
-What resolves is a :class:`LabelModel` or a :class:`MediaModel`; a class
-subclassing :class:`Model` directly is refused (``docs/adr/0054``).
+A short name resolves through ``strata.models``; ``module:Class`` or
+``file.py:Class`` is a direct reference. See ``docs/adr/0034`` and ``docs/adr/0054``.
 """
 
 import hashlib
@@ -17,6 +13,7 @@ from pathlib import Path
 
 from strata.common import plugins
 
+from ..baselines import extra_for
 from ..model import LabelModel, MediaModel, Model
 
 #: Where an installed distribution advertises the models it provides.
@@ -31,36 +28,17 @@ class ModelError(Exception):
 
 
 def available() -> dict[str, str]:
-    """Registered short names, and what each resolves to.
-
-    Read from what is installed. See ``docs/adr/0034``.
-    """
+    """Registered short names, and what each resolves to. See ``docs/adr/0034``."""
     return plugins.available(entry_points(group=ENTRY_POINT_GROUP))
 
 
-def absolute(name: str, root: Path | None = None) -> str:
-    """A reference that will still resolve without ``root`` to hand.
-
-    A file reference is anchored; registry names need no such help. See
-    ``docs/adr/0005``.
-    """
-    if ":" not in name:
-        return name
-    target, class_name = name.rsplit(":", 1)
-    if not target.endswith(".py"):
-        return name
-    path = Path(target)
-    if not path.is_absolute() and root is not None:
-        path = Path(root) / path
-    return f"{path.resolve()}:{class_name}"
+#: A reference that resolves without ``root``: :func:`strata.common.plugins.anchor`
+#: (``docs/adr/0005``, ``docs/adr/0015``).
+absolute = plugins.anchor
 
 
 def resolve(name: str, root: Path | None = None) -> type[Model]:
-    """The class a model name refers to.
-
-    ``root`` anchors a ``file.py:Class`` reference, so a project-local model
-    is found relative to the work rather than the current directory.
-    """
+    """The class a model name refers to; ``root`` anchors a ``file.py:Class`` reference."""
     found = _from_registry(name) if ":" not in name else _from_reference(name, root)
     _refuse_the_old_name(found, name)
     _refuse_a_bare_model(found, name)
@@ -68,12 +46,7 @@ def resolve(name: str, root: Path | None = None) -> type[Model]:
 
 
 def _refuse_a_bare_model(model_cls: type, name: str) -> None:
-    """Refuse a class that is neither a ``LabelModel`` nor a ``MediaModel``.
-
-    One subclassing ``Model`` directly would otherwise be read quietly as a
-    label model, and that fallback would stay alive for as long as any old
-    plugin exists. See ``docs/adr/0054``.
-    """
+    """Refuse a class that is neither a ``LabelModel`` nor a ``MediaModel`` (``docs/adr/0054``)."""
     if isinstance(model_cls, type) and issubclass(model_cls, (LabelModel, MediaModel)):
         return
     if isinstance(model_cls, type) and issubclass(model_cls, Model):
@@ -90,10 +63,10 @@ def _refuse_a_bare_model(model_cls: type, name: str) -> None:
 
 
 def _refuse_the_old_name(model_cls: type, name: str) -> None:
-    """Refuse a model that still says ``task`` for its label type.
+    """Refuse a model that still says ``task`` for its label type, which would otherwise read as a
+    classifier.
 
-    Otherwise it inherits the default label type and is refused later as a
-    mismatch, or worse, accepted as a classifier. See ``docs/adr/0041``.
+    See ``docs/adr/0041``.
     """
     if not isinstance(model_cls, type):
         return
@@ -130,8 +103,6 @@ def _from_registry(name: str) -> type[Model]:
     try:
         return entry.load()
     except ImportError as exc:
-        # A baseline asked for by name on an install without its framework
-        # gets the same answer as a full reference. docs/adr/0034
         raise ModelError(
             f"Model {name!r} is registered as {entry.value}, which will not "
             f"import: {exc}{_extra_hint(entry.module)}"
@@ -145,9 +116,7 @@ def _module_from_file(target: str, root: Path | None):
     if not path.exists():
         raise ModelError(f"Model reference points at a missing file: {path}")
 
-    # Keyed on the whole path, not the stem, and returned from the cache when
-    # already loaded so resolving the same file twice yields the same class.
-    # docs/adr/0025
+    # Keyed on the whole path, so resolving one file twice yields one class. docs/adr/0025
     digest = hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:12]
     module_name = f"strata_modelling_local_{path.stem}_{digest}"
     if module_name in sys.modules:
@@ -157,7 +126,7 @@ def _module_from_file(target: str, root: Path | None):
     if spec is None or spec.loader is None:
         raise ModelError(f"Could not load a model from {path}")
     module = importlib.util.module_from_spec(spec)
-    # Registered before exec so dataclasses and pickle inside can find it
+    # Registered before exec, so dataclasses and pickle inside can find it.
     sys.modules[module_name] = module
     try:
         spec.loader.exec_module(module)
@@ -180,12 +149,7 @@ def _module_from_import(target: str, name: str):
 
 
 def _extra_hint(module: str) -> str:
-    """Name the extra when a baseline's framework is what is missing.
-
-    See ``docs/adr/0034``.
-    """
-    from ..baselines import extra_for
-
+    """Name the extra when a baseline's framework is what is missing. See ``docs/adr/0034``."""
     extra = extra_for(module)
     if extra is None:
         return ""

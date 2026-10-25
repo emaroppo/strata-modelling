@@ -1,8 +1,4 @@
-"""Training, prediction and generation: the handler both transports call.
-
-The in-process path and the HTTP adapter call *these functions*, so
-validation happens once. See ``docs/adr/0007``.
-"""
+"""Training, prediction and generation: the handler both transports call. See ``docs/adr/0007``."""
 
 import hashlib
 import inspect
@@ -12,8 +8,9 @@ from pathlib import Path
 
 from strata.common.canonical import content_hash
 from strata.contracts import MANIFEST_NAME, Manifest, ManifestFormatError
+from strata.contracts.sample_types import PLAIN
 
-from .model import Example, LabelModel, MediaModel, Model
+from .model import EpochReport, Example, LabelModel, MediaModel, Model
 from .plugins.registry import ModelError, absolute, resolve
 from .requests import (
     Checkpoint,
@@ -31,13 +28,11 @@ class TrainingError(Exception):
     """A training job that cannot be run as requested."""
 
 
-def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
+def train(request: TrainRequest, store: RunStore, on_epoch: EpochReport | None = None) -> Run:
     """Train from a materialised dataset and record the run."""
     manifest = _read_manifest(request.dataset_dir)
     schema = manifest.label_schema
     model_cls = resolve(request.model, root=request.dataset_dir)
-    # What is checked before the round follows what the model makes.
-    # docs/adr/0054
     media = issubclass(model_cls, MediaModel)
 
     if issubclass(model_cls, MediaModel):
@@ -48,7 +43,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
             f"set is '{schema.label_type}'"
         )
 
-    # Built before its requirements are read. docs/adr/0014
+    # Built before its requirements are read: they come from the instance. docs/adr/0014
     model = _construct(model_cls, request.model, request.params)
 
     undeclared = (
@@ -57,7 +52,6 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
         else []
     )
     if undeclared:
-        # An implicit class must be declared. docs/adr/0014
         raise TrainingError(
             f"Model {request.model!r} predicts {', '.join(undeclared)}, which this "
             f"label set does not declare (it has: {', '.join(schema.classes)}). "
@@ -67,7 +61,6 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
     declared: set[str] = {str(f["name"]) for f in manifest.features if f.get("name")}
     unmet = [f for f in model.requires_features if f not in declared]
     if unmet:
-        # Refused before the round. docs/adr/0014
         raise TrainingError(
             f"Model {request.model!r} needs feature(s) {', '.join(unmet)}, which "
             f"this dataset does not carry (it has: {', '.join(sorted(declared)) or 'none'}). "
@@ -78,11 +71,9 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
         try:
             model.requires_schema(schema)
         except ValueError as e:
-            # Refused before the round. docs/adr/0014
             raise TrainingError(
                 f"Model {request.model!r} cannot be trained on this label set: {e}"
             ) from None
-    # A media model has no classes: what it learns is the samples. docs/adr/0054
     classes = [] if media else list(schema.classes)
     parent = _warm_start(model, request, store, classes)
 
@@ -91,14 +82,11 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
         raise TrainingError(f"{request.dataset_dir} has no training samples")
     train_examples = nested_subset(train_examples, request.train_fraction, request.subset_seed)
 
-    # Kept as well as forwarded; a model that never calls back records no
-    # curve. docs/adr/0005
+    # Kept as well as forwarded; a model that never calls back records no curve. docs/adr/0005
     curve: list[tuple[int, dict[str, float]]] = []
 
     def collect(done: int, total: int, reported: dict[str, float]) -> bool | None:
         curve.append((done, dict(reported)))
-        # The caller's answer goes back to the model: a request to stop early
-        # is the caller's to make and the model's to honour, or not
         return on_epoch(done, total, reported) if on_epoch is not None else None
 
     saving = _Saving(model, store)
@@ -108,7 +96,6 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
                 train_examples, val_examples or None, collect, **_offered(model.finetune, saving)
             )
         else:
-            # Nothing else resolves. docs/adr/0054
             assert isinstance(model, LabelModel)
             metrics = model.finetune(
                 train_examples,
@@ -117,29 +104,24 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
                 collect,
                 **_offered(model.finetune, saving),
             )
-        # How much was trained on, on the run itself: a learning curve's x axis
+        # A learning curve's x axis
         metrics["train_samples"] = float(len(train_examples))
-        # What it actually ran with, defaults included, where it says.
-        # docs/adr/0054
         resolved = model.resolved_params()
         params = request.params if resolved is None else resolved
         if not saving.saved:
-            # A model that never asked is kept once, at the end, as it always
-            # was. docs/adr/0054
+            # A model that never asked is kept once, at the end. docs/adr/0054
             saving(FINAL)
 
         return store.record(
             Run(
-                # Minted by the store, where the run happened
+                # Minted by the store. docs/adr/0005
                 id="",
                 parent_run_id=parent.id if parent else None,
                 dataset=manifest.dataset,
                 dataset_version=manifest.version,
-                # From the manifest rather than the request. docs/adr/0005
                 catalog_id=manifest.catalog_id,
                 experiment_id=request.experiment_id,
                 label_set=manifest.label_set,
-                # Anchored. docs/adr/0005
                 model=absolute(request.model, request.dataset_dir),
                 model_version=model_cls.version,
                 params=params,
@@ -147,9 +129,7 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
             ),
             metrics,
             curve,
-            # What this run saw: the side of every sample it trained from. docs/adr/0005
             saw=[Seen(s.checksum, s.split, s.batch, s.reviewed) for s in manifest.samples],
-            # Moved under the run once it has an id. docs/adr/0054
             checkpoints=saving.saved,
         )
     finally:
@@ -157,9 +137,8 @@ def train(request: TrainRequest, store: RunStore, on_epoch=None) -> Run:
 
 
 def predict(request: PredictRequest, store: RunStore, on_batch=None) -> list[ScoredPath]:
-    """Run a recorded checkpoint over some paths.
-
-    Predictions are returned rather than written. See ``docs/adr/0006``.
+    """Run a recorded checkpoint over some paths; predictions are returned, not written. See
+    ``docs/adr/0006``.
     """
     run, checkpoint = _recorded(store, request.run_id, request.checkpoint)
     model_cls = resolve(run.model)
@@ -179,12 +158,10 @@ def predict(request: PredictRequest, store: RunStore, on_batch=None) -> list[Sco
 
 
 def generate(request: GenerateRequest, store: RunStore, on_batch=None) -> list[GeneratedOutput]:
-    """Generate from a media model's recorded checkpoint, one output per input.
+    """Generate from a media model's recorded checkpoint, one output per input, returned for the
+    caller to commit.
 
-    Outputs are returned rather than written: the caller knows which
-    samples it passed, and commits them as a generate run. Each says the
-    settings digest and seed that made it, positionally. See
-    ``docs/adr/0053`` and ``docs/adr/0054``.
+    See ``docs/adr/0053`` and ``docs/adr/0054``.
     """
     run, checkpoint = _recorded(store, request.run_id, request.checkpoint)
     model_cls = resolve(run.model)
@@ -208,8 +185,7 @@ def generate(request: GenerateRequest, store: RunStore, on_batch=None) -> list[G
         GeneratedOutput(
             data=out.data,
             ended=out.ended,
-            # Over the canonical form, so equal settings agree wherever
-            # they were written. docs/adr/0017
+            # Over the canonical form. docs/adr/0017
             settings_digest=content_hash(settings),
             seed=seed,
             checkpoint=checkpoint.name,
@@ -223,10 +199,7 @@ def generate(request: GenerateRequest, store: RunStore, on_batch=None) -> list[G
 
 
 def _construct[M: Model](model_cls: type[M], name: str, params: dict) -> M:
-    """Build the model, turning a bad parameter into a ``TrainingError``.
-
-    See ``docs/adr/0007``.
-    """
+    """Build the model, turning a bad parameter into a ``TrainingError``. See ``docs/adr/0007``."""
     try:
         return model_cls(**params)
     except TypeError as exc:
@@ -248,16 +221,14 @@ def _read_manifest(directory: Path) -> Manifest:
     try:
         return Manifest.model_validate_json(path.read_text())
     except ManifestFormatError as e:
-        # Refused rather than rebuilt. docs/adr/0004
         raise TrainingError(f"{directory}: {e}") from None
 
 
 def nested_subset(train: list[Example], fraction: float, seed: int) -> list[Example]:
-    """The first ``fraction`` of ``train`` in an order fixed by ``seed``.
+    """The first ``fraction`` of ``train``, at least one, in an order fixed by ``seed``.
 
-    Ranked by a hash of the seed and each file's name, never by position, so
-    the subsets for one seed are nested — 25% inside 50% inside 100% — and
-    the same whatever order the manifest lists them in. At least one sample.
+    Ranked by a hash of the seed and file name, so one seed's subsets nest whatever order the
+    manifest lists.
     """
     if fraction >= 1.0:
         return train
@@ -272,20 +243,15 @@ def examples(
 ) -> tuple[list[Example], list[Example]]:
     """What a model is handed from a materialised dataset: training, then validation.
 
-    Read through the manifest's own definition. Public so every label type
-    is tested through it. See ``docs/adr/0004``.
-
-    Without ``targets``, for a media model, an example carries none: the
-    file is what it learns to make, and its features the input. See
+    Without ``targets``, for a media model, an example carries none. See ``docs/adr/0004`` and
     ``docs/adr/0054``.
     """
     train_examples, val_examples = [], []
     for sample in manifest.samples:
         if sample.value is None:
-            # Skipped: reviewed, nothing applicable, not training data
             continue
         if sample.split == "holdout":
-            # Never handed to a model, not even as validation. docs/adr/0003
+            # Never handed to a model. docs/adr/0003
             continue
         example = Example(
             path=Path(directory) / sample.path,
@@ -306,7 +272,6 @@ def _warm_start(
         raise TrainingError(f"No run with id {request.parent_run_id} to continue from")
     _refuse_a_different_model(parent, type(model))
     if parent.model_version != type(model).version:
-        # A warm start across a model version is refused. docs/adr/0005
         raise TrainingError(
             f"Run {parent.id} was trained by {parent.model!r} version "
             f"{parent.model_version}, and the installed one is version "
@@ -321,8 +286,7 @@ def _warm_start(
         )
     checkpoint = parent.checkpoint_named(request.parent_checkpoint)
     if request.parent_checkpoint is not None:
-        # Named, it has to be there: a warm start from the wrong weights is
-        # worse than none. docs/adr/0054
+        # Named, it has to be there. docs/adr/0054
         if checkpoint is None:
             raise TrainingError(_no_such_checkpoint(parent, request.parent_checkpoint))
         model.load(_on_disk(parent, checkpoint))
@@ -332,10 +296,10 @@ def _warm_start(
 
 
 def _refuse_a_different_model(parent: Run, model_cls: type[Model]) -> None:
-    """Refuse to continue from a checkpoint another model wrote.
+    """Refuse to continue from a checkpoint another model wrote; a parent that no longer resolves is
+    left alone.
 
-    Compared by class name; a parent reference that no longer resolves is
-    left alone. See ``docs/adr/0025``.
+    See ``docs/adr/0025``.
     """
     try:
         was = resolve(parent.model)
@@ -354,9 +318,7 @@ def _refuse_a_different_model(parent: Run, model_cls: type[Model]) -> None:
 class _Saving:
     """The ``save_checkpoint`` a model is handed, and what it saved.
 
-    The run's id is minted only once training is done, so each checkpoint
-    is saved aside and moved under the run as it is recorded. See
-    ``docs/adr/0054``.
+    Saved aside until the run has an id, then moved under it. See ``docs/adr/0054``.
     """
 
     def __init__(self, model: Model, store: RunStore):
@@ -384,9 +346,8 @@ class _Saving:
 
 
 def _offered(finetune, saving: _Saving) -> dict[str, _Saving]:
-    """``save_checkpoint``, for a ``finetune`` that takes it, and nothing for one that does not.
-
-    So no model has to change for it. See ``docs/adr/0054``.
+    """``save_checkpoint`` for a ``finetune`` that takes it, nothing for one that does not. See
+    ``docs/adr/0054``.
     """
     takes = any(
         p.kind is inspect.Parameter.VAR_KEYWORD
@@ -421,12 +382,9 @@ def _no_such_checkpoint(run: Run, name: str) -> str:
 
 
 def _check_sample_types(model_cls: type[MediaModel], name: str, manifest: Manifest) -> None:
-    """Refuse samples that are not of the type a media model trains on.
+    """Refuse any manifest sample not of the type a media model trains on, subtypes accepted.
 
-    Every sample of the manifest, held out or not. A type's subtypes are
-    accepted, and the plain case of a media accepts the whole media, by
-    the rule a catalog's selection uses. See ``docs/adr/0052`` and
-    ``docs/adr/0054``.
+    See ``docs/adr/0052`` and ``docs/adr/0054``.
     """
     wanted = model_cls.trains_on
     if wanted is None:
@@ -434,8 +392,6 @@ def _check_sample_types(model_cls: type[MediaModel], name: str, manifest: Manife
             f"Model {name!r} is a media model and names no sample type in `trains_on`. "
             f"Name the type it learns from, such as SFTTextExample."
         )
-    from strata.contracts.sample_types import PLAIN
-
     media, subtype = wanted.media, wanted.subtype()
     want = f"{media}/{subtype}"
 

@@ -1,11 +1,11 @@
-"""What the two baseline modules share.
+"""What the baseline modules share: console, progress displays, device, seeding, thresholding.
 
-A console, the two progress displays, the device rule, and the threshold
-that turns sigmoid probabilities into a prediction. Out of
-``baselines/__init__.py``, which the registry imports on a base install
-that has none of these frameworks. See ``docs/adr/0034``.
+Kept out of ``baselines/__init__.py``, which a base install imports. See ``docs/adr/0034``.
 """
 
+import random
+
+import numpy
 import torch
 from rich import get_console
 from rich.progress import (
@@ -47,18 +47,9 @@ def predict_progress() -> Progress:
 
 
 def seed_everything(seed: int | None) -> None:
-    """Make a training run repeatable when a seed is given; a no-op otherwise.
-
-    Python's, numpy's and torch's generators, CUDA's included, so the head's
-    initialisation and the shuffle order are the same run to run. A grid
-    over seeds is how a comparison sees the spread a single run hides.
-    """
+    """Seed Python's, numpy's and torch's generators, CUDA's included; a no-op without a seed."""
     if seed is None:
         return
-    import random
-
-    import numpy
-
     random.seed(seed)
     numpy.random.seed(seed)
     torch.manual_seed(seed)

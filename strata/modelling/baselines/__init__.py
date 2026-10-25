@@ -1,15 +1,9 @@
-"""Baseline models shipped with strata.modelling.
-
-A project selects one through ``[model] ref`` in ``project.toml``, or points
-at its own ``model.py`` when it needs a bespoke architecture. Each baseline
-is registered under the ``strata.models`` entry point by module, and its
-framework is an optional dependency. See ``docs/adr/0034``.
-"""
+"""Baseline models shipped with strata.modelling, each behind an extra. See ``docs/adr/0034``."""
 
 #: Baseline package -> the install extra carrying its framework
 EXTRAS: dict[str, str] = {
     "strata.modelling.baselines.image": "image",
-    # Before its parent: the first prefix that matches is the one named
+    # Before its parent: the first matching prefix is the one named.
     "strata.modelling.baselines.text.gliner": "gliner",
     "strata.modelling.baselines.text.sft": "sft",
     "strata.modelling.baselines.text": "text",

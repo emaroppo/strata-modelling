@@ -15,10 +15,8 @@ from ._context import Context, DatasetIdentity, Host, Keyed, StageError, Strict,
 
 
 class TrainStageRequest(Keyed):
-    """One round of training, wherever it runs.
-
-    Locally the directory is what is trained from. Remotely the host
-    materialises for itself from ``dataset`` (``docs/adr/0007``).
+    """One round of training: from ``dataset_dir`` here, or from ``dataset`` on the host. See
+    ``docs/adr/0007``.
     """
 
     later = frozenset({"parent_checkpoint"})
@@ -29,22 +27,19 @@ class TrainStageRequest(Keyed):
     params: dict = Field(default_factory=dict)
     #: Applied over ``params`` when the round starts cold.
     fresh_params: dict = Field(default_factory=dict)
-    #: The warm-start policy, written down: cold, or from a named parent,
-    #: or — neither given — from the newest run over the dataset
+    #: The warm-start policy: cold, from a named parent, or from the newest run over the dataset
     #: (``docs/adr/0025``).
     fresh: bool = False
     parent: str | None = None
-    #: Which of ``parent``'s checkpoints to continue from, by name. None is
-    #: its last. Only with a named parent: a checkpoint's name means
-    #: nothing until the run is known. See ``docs/adr/0054``.
+    #: Which of ``parent``'s checkpoints to continue from; None is its last, and a parent must be
+    #: named (``docs/adr/0054``).
     parent_checkpoint: str | None = None
     #: Declarations only, for the host to resolve as it materialises.
     features: list[dict] = Field(default_factory=list)
-    #: The experiment file asking, by its hash, recorded on the run wherever
-    #: it is made. None from the command line.
+    #: The experiment file asking, by its hash; None from the command line.
     experiment_id: str | None = None
-    #: A share of the training side, for a learning curve; nested per
-    #: ``subset_seed``. See :class:`strata.modelling.requests.TrainRequest`.
+    #: A share of the training side, nested per ``subset_seed``; see
+    #: :class:`strata.modelling.requests.TrainRequest`.
     train_fraction: float = Field(default=1.0, gt=0.0, le=1.0)
     subset_seed: int = 0
 
@@ -60,8 +55,7 @@ class TrainRecord(Strict):
     classes: list[str]
     checkpoint: Path | None
     metrics: dict[str, float]
-    #: Samples the host fetched to build its copy; zero locally and on a
-    #: cache hit there.
+    #: Samples the host fetched to build its copy; zero locally and on a cache hit.
     materialised: int = 0
 
 
@@ -95,8 +89,7 @@ def _train_here(request: TrainStageRequest, context: Context) -> TrainRecord:
         parent = store.latest(
             manifest.dataset, manifest.catalog_id, since_version=manifest.sides_from_version
         )
-    # Asked after the parent is known: fresh is a request and cold is an
-    # outcome. docs/adr/0025
+    # Fresh is a request, cold is an outcome. docs/adr/0025
     cold = parent is None
     params = {**request.params, **request.fresh_params} if cold else dict(request.params)
 
@@ -119,13 +112,11 @@ def _train_here(request: TrainStageRequest, context: Context) -> TrainRecord:
 
 def _train_there(request: TrainStageRequest, context: Context, host: Host) -> TrainRecord:
     if request.train_fraction < 1.0:
-        # Refused rather than silently trained on everything
         raise StageError(
             "A train_fraction below 1 is only supported for rounds trained here, "
             "not on a modelling host. Run the learning curve locally."
         )
     if request.parent_checkpoint is not None:
-        # The host picks its own parent, and a round names none
         raise StageError(
             "A parent_checkpoint is only supported for rounds trained here, not on a "
             "modelling host, which chooses the parent itself."
@@ -136,11 +127,10 @@ def _train_there(request: TrainStageRequest, context: Context, host: Host) -> Tr
             "version, digest and catalog — for the host to check it means the same there."
         )
     client = context.client(host.url, host.token)
-    # Asked before anything is sent. docs/adr/0008
+    # docs/adr/0008
     served = client.served_catalog()
     check_catalog(request.dataset.catalog_id, str(served.get("id") or ""))
-    # The split as this side's directory has it, sent positionally with a
-    # proof of the order. docs/adr/0025
+    # The split as this side's directory has it, with a proof of the order. docs/adr/0025
     split = None
     if request.dataset_dir is not None:
         held = _manifest(request.dataset_dir)

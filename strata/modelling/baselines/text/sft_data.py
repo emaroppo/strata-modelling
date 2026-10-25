@@ -1,10 +1,7 @@
-"""What the text-sft baseline does to its examples before and after the model.
+"""What the text-sft baseline does to its examples before and after the model: prompts, encoding,
+padding, near copies, seeded sampling.
 
-The prompt each input becomes, the tokens and labels an example is trained
-on, the batches they are padded into, the near copies left out, and the
-sampling that gives every output its own seed. None of it loads a model, so
-all of it is tested with a stand-in tokenizer. torch is imported only where
-a tensor is made. See ``docs/adr/0054``.
+Loads no model, so a stand-in tokenizer tests it. See ``docs/adr/0054``.
 """
 
 import string
@@ -25,9 +22,7 @@ VARIANTS = ("base", "instruct")
 def template_fields(template: str) -> tuple[str, ...]:
     """The input fields a prompt template names, in order of first use.
 
-    A field is named, ``{subject}``, never positional: the input is the
-    sample's fields, which have names and no order. Attribute and index
-    access are refused too, so what the template reads is exactly what
+    Positional, attribute and index fields are refused, so what the template reads is what
     ``requires_features`` declares.
     """
     found: list[str] = []
@@ -51,15 +46,10 @@ def template_fields(template: str) -> tuple[str, ...]:
 
 
 class Prompts:
-    """An input as the text the model is given, and a target as the text it learns.
+    """An input as the text the model is given, and a target as the text it learns, tokenized apart.
 
-    The two are tokenized apart, at training as at generation, so the
-    prompt a model learned after is the one it is given. ``base`` is text
-    completion: the begin token, the template, then ``response_marker``,
-    and the target ends with the end token. ``instruct`` is a chat: the
-    system prompt, the template as the user's turn, and the target as the
-    assistant's, wrapped by the tokenizer's chat template, whose end-of-turn
-    token is what the model learns to stop on.
+    ``base`` is completion after ``response_marker``, ending in the end token;
+    ``instruct`` is a chat through the tokenizer's template, ending in its end of turn.
     """
 
     def __init__(
@@ -108,8 +98,7 @@ class Prompts:
         """The target and the end token the model must learn to emit."""
         if self.variant == "base":
             return body + tokenizer.eos_token
-        # Whatever the chat template appends after the prompt: the body as
-        # it renders it, and its own end of turn
+        # Whatever the chat template appends after the prompt, end of turn included.
         full = tokenizer.apply_chat_template(
             self._messages(features, body), add_generation_prompt=False, tokenize=False
         )
@@ -148,17 +137,13 @@ def encode(prompts: Prompts, tokenizer, features: dict, body: str) -> dict:
 
 
 class Collator:
-    """Right-pads a batch; the padding is masked out of the attention and the loss.
-
-    Masked by position, not by token id, so a tokenizer whose padding token
-    is its end token still learns to stop.
-    """
+    """Right-pads a batch, the padding masked out of attention and loss by position, not by id."""
 
     def __init__(self, pad_id: int):
         self.pad_id = pad_id
 
     def __call__(self, batch: list[dict]) -> dict:
-        import torch
+        import torch  # the sft extra; this module loads without it
 
         width = max(len(b["input_ids"]) for b in batch)
         input_ids, labels, mask = [], [], []
@@ -207,13 +192,11 @@ def jaccard(a: frozenset, b: frozenset) -> float:
 
 
 def collapse(texts: Sequence[str], keys: Sequence[str], threshold: float) -> list[int]:
-    """Which of ``texts`` to keep: one per group of near copies, by index.
+    """Which of ``texts`` to keep: one per chained group of near copies, by index, in the order
+    given.
 
-    Two texts are near copies when, folded, they are identical or their
-    five-word runs overlap by a Jaccard of at least ``threshold``. Matches
-    chain: A like B and B like C make one group. Each group keeps the
-    member with the smallest key, its checksum, so a rerun keeps the same
-    one. Returned in the order given.
+    Near copies are identical folded or their five-word shingles reach ``threshold`` Jaccard; a
+    group keeps its smallest key.
     """
     parent = list(range(len(texts)))
 
@@ -240,8 +223,7 @@ def collapse(texts: Sequence[str], keys: Sequence[str], threshold: float) -> lis
     order = sorted(range(len(texts)), key=lambda i: len(sets[i]))
     for a, i in enumerate(order):
         for j in order[a + 1 :]:
-            # Sorted by size: once j is too big for the Jaccard to reach the
-            # threshold, every later one is too
+            # Sorted by size: once j is too big to reach the threshold, every later one is.
             if len(sets[i]) < threshold * len(sets[j]):
                 break
             if jaccard(sets[i], sets[j]) >= threshold:
@@ -254,10 +236,8 @@ def collapse(texts: Sequence[str], keys: Sequence[str], threshold: float) -> lis
 
 
 def copies_of(texts: Sequence[str], reference: Sequence[str], threshold: float) -> list[bool]:
-    """For each of ``texts``, whether it nearly copies any of ``reference``.
-
-    The same test as :func:`collapse`. Only references of a size that
-    could reach the threshold are compared.
+    """For each of ``texts``, whether it nearly copies any of ``reference``, by :func:`collapse`'s
+    test.
     """
     folded_reference = [folded(t) for t in reference]
     exact = set(folded_reference)
@@ -281,13 +261,11 @@ def copies_of(texts: Sequence[str], reference: Sequence[str], threshold: float) 
 
 
 class SeededSampling:
-    """Samples each row of a batch with its own seed, so an output is its seed's.
+    """Samples each row of a batch from its own generator, so an output is its seed's whatever
+    shared its batch.
 
-    Torch samples a batch from one generator, so an output would depend on
-    which outputs shared its batch. This draws each row from a generator
-    of its own, with the temperature and top-p applied here, and leaves
-    every token but the drawn one at minus infinity: given to ``generate``
-    as a logits processor with sampling off, the greedy pick is the draw.
+    A logits processor for ``generate`` with sampling off: every token but the draw is set to minus
+    infinity.
     """
 
     def __init__(self, seeds: Sequence[int], temperature: float, top_p: float):
@@ -297,7 +275,7 @@ class SeededSampling:
         self._generators: list[Any] | None = None
 
     def __call__(self, input_ids, scores):
-        import torch
+        import torch  # the sft extra; this module loads without it
 
         if self._generators is None:
             self._generators = [
@@ -306,8 +284,8 @@ class SeededSampling:
         probs = torch.softmax(scores.float() / self.temperature, dim=-1)
         if self.top_p < 1.0:
             ordered, order = probs.sort(dim=-1, descending=True)
-            # A token is kept while the ones more likely than it hold less
-            # than top_p between them; the likeliest is always kept
+            # Kept while the likelier tokens hold less than top_p between them; the likeliest always
+            # is.
             before = ordered.cumsum(dim=-1) - ordered
             ordered = ordered.masked_fill(before >= self.top_p, 0.0)
             probs = torch.zeros_like(probs).scatter(-1, order, ordered)

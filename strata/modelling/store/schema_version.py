@@ -1,9 +1,5 @@
-"""Where this package's migration chain lives, and the command that runs it.
-
-The plumbing is :mod:`strata.common.migrations`; what is this package's own
-is the directory of scripts beside its tables, and the name of the command
-that runs them from an installed wheel. Which database that command reaches
-is ``migrations/env.py``'s business.
+"""Where this package's migration chain lives, and the command that runs it; the plumbing is
+:mod:`strata.common.migrations`.
 """
 
 from pathlib import Path

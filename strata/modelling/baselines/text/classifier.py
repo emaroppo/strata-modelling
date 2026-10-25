@@ -35,14 +35,12 @@ class TextClassifier(TransformerBase):
             self.encoder,
             num_labels=num_labels,
             problem_type=self.problem_type,
-            # The encoder may already carry a head for someone else's classes;
-            # ours is sized for this project's, so re-initialise it
+            # The encoder may carry a head sized for someone else's classes.
             ignore_mismatched_sizes=True,
         ).to(self.device)
 
     def _item(self, fields: dict, text: str, offsets, target) -> dict:
-        # Every window of a document carries the document's labels.
-        # docs/adr/0014
+        # Every window carries the document's labels. docs/adr/0014
         labels = torch.zeros(len(self.classes))
         for name in target.values if target is not None else []:
             if name in self.classes:
@@ -69,8 +67,7 @@ class TextClassifier(TransformerBase):
         if not keep:
             keep = {max(combined, key=lambda n: combined[n]): max(combined.values())}
         order = sorted(keep, key=lambda n: keep[n], reverse=True)
-        # Built in one construction: confidences are positional against
-        # values. docs/adr/0004
+        # Confidences are positional against values. docs/adr/0004
         return ChoicesPrediction(values=order, confidences=[round(keep[n], 4) for n in order])
 
 

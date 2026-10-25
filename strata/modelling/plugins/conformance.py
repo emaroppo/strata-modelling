@@ -1,28 +1,7 @@
-"""An executable specification of the model contract.
+"""An executable specification of the model contract, as tests a plugin runs against its own model.
 
-A plugin registering a model is making a promise about behaviour that
-nothing else can check for it. This is the promise, written as tests a
-plugin runs against its own model (see ``docs/adr/0033``):
-
-.. code-block:: python
-
-    from strata.modelling.plugins.conformance import ModelContract
-
-    class TestMyModel(ModelContract):
-        @pytest.fixture
-        def model(self):
-            return MyModel(epochs=1)
-
-        @pytest.fixture
-        def examples(self, tmp_path):
-            return [Example(path=..., target=Choices(values=["cat"]))]
-
-Two fixtures, and the plugin inherits the suite. What it checks is the
-contract only — that a checkpoint round-trips, that predictions line up with
-their inputs, that declared classes are honoured. Whether the model is any
-*good* is the plugin's own business.
-
-Importing this pulls in pytest, so it lives behind the ``test`` extra.
+Subclass :class:`ModelContract` and supply the ``model`` and ``examples``
+fixtures; imports pytest, so it lives behind the ``test`` extra. See ``docs/adr/0033``.
 """
 
 from typing import ClassVar
@@ -42,12 +21,7 @@ from ..model import Example, LabelModel
 
 
 def _class_names(values) -> set[str]:
-    """The classes a value asserts, whatever kind of value it is.
-
-    A classification target names its classes directly; a span or a box
-    carries them on each labelled thing, and a span carries a *list*, every
-    entry of which is read.
-    """
+    """The classes a value asserts, whatever kind of value it is."""
     names: set[str] = set()
     for value in values:
         if isinstance(value, str):
@@ -60,8 +34,8 @@ def _class_names(values) -> set[str]:
 class ModelContract:
     """Subclass this in a plugin's tests and supply the two fixtures."""
 
-    #: What a model of each label type emits. Not a plugin surface: a new label
-    #: type is added to ``strata.contracts`` first. See ``docs/adr/0004``.
+    #: What a model of each label type emits; a new label type is added to ``strata.contracts``
+    #: first (``docs/adr/0004``).
     PREDICTION_TYPES: ClassVar[dict[str, type]] = {
         "classification": ChoicesPrediction,
         "span": SpansPrediction,
@@ -81,12 +55,10 @@ class ModelContract:
 
     @pytest.fixture
     def fresh(self, model) -> LabelModel:
-        """An untrained model of the same kind, for restoring a checkpoint into.
+        """An untrained, default-constructed model of the same kind, for restoring a checkpoint
+        into.
 
-        Default-constructed, because that is what a caller loading a run does
-        — it has the reference and the recorded params, not the instance.
-        Override when a model needs constructor arguments to match the one
-        under test, such as pinning a device.
+        Override when a model needs constructor arguments to match the one under test.
         """
         return type(model)()
 
@@ -99,8 +71,7 @@ class ModelContract:
                     seen.append(name)
         return seen or ["alpha"]
 
-    #: The plainest label set of each label type — nothing declared on it, which
-    #: is what a label set means before anyone says otherwise.
+    #: The plainest label set of each label type, nothing declared on it.
     SCHEMA_TYPES: ClassVar[dict[str, type]] = {
         "classification": ClassificationSchema,
         "span": SpanSchema,
@@ -109,12 +80,9 @@ class ModelContract:
 
     @pytest.fixture
     def schema(self, model, classes):
-        """A label set this model is meant to be trained on.
+        """A label set this model is meant to be trained on: the plainest of its label type.
 
-        Defaults to the plainest one of its label type. **Override it** where a
-        model exists precisely to serve a label set that declares something
-        — a single-label classifier, a tagger for overlapping spans — since
-        the default is then one it is right to refuse.
+        Override it where the model exists to serve a label set that declares something.
         """
         label_type = type(model).label_type
         if label_type not in self.SCHEMA_TYPES:
@@ -138,25 +106,16 @@ class ModelContract:
     # -- declarations ---------------------------------------------------
 
     def test_it_is_a_model(self, model):
-        # A label model: one subclassing Model directly is refused. docs/adr/0054
         assert isinstance(model, LabelModel)
 
     def test_it_declares_a_label_type(self, model):
-        # Checked before training. docs/adr/0014
         assert isinstance(type(model).label_type, str) and type(model).label_type
 
     def test_it_declares_a_version(self, model):
-        # A run records this, and warm-starting across a change is refused. docs/adr/0005
         assert isinstance(type(model).version, str) and type(model).version
 
     def test_it_accepts_the_label_set_it_is_for(self, model, schema):
-        """A model may refuse a label set, but not the one it exists to serve.
-
-        ``requires_schema`` is how a model declines a shape it cannot
-        represent — overlapping spans, a region with two labels, several
-        classes at once. Declining every label set of its own label type is
-        the thing this catches, and the label type check could not.
-        """
+        """A model may refuse a label set, but not the one it exists to serve."""
         model.requires_schema(schema)
 
     # -- training -------------------------------------------------------
@@ -170,8 +129,6 @@ class ModelContract:
         assert isinstance(model.finetune(examples[:-1], classes, examples[-1:]), dict)
 
     def test_finetune_accepts_no_validation_set(self, model, examples, classes):
-        # val is optional: a first round may have too little data to hold any
-        # back, and that must not be a crash
         assert isinstance(model.finetune(examples, classes, None), dict)
 
     # -- prediction -----------------------------------------------------
@@ -187,10 +144,7 @@ class ModelContract:
             assert 1 <= done <= total
 
     def test_finetune_accepts_a_request_to_stop(self, model, examples, classes):
-        """Asked to stop, a model may stop or carry on — but it has to finish.
-
-        See ``docs/adr/0031``.
-        """
+        """Asked to stop, a model may stop or carry on, but it has to finish (``docs/adr/0031``)."""
 
         def stop(done, total, metrics):
             return True
@@ -219,16 +173,13 @@ class ModelContract:
         assert all(isinstance(o, expected_prediction) for o in outputs)
 
     def test_predictions_stay_within_the_class_list(self, model, examples, classes):
-        # A class the label set has never heard of cannot be stored. docs/adr/0014
+        # docs/adr/0014
         model.finetune(examples, classes)
         for output in model.predict([e.path for e in examples]):
             assert _class_names(output.values) <= set(classes)
 
     def test_predict_accepts_features(self, model, examples, classes):
-        """A model may ignore them, but it has to accept them.
-
-        Same rule as ``on_batch``. See ``docs/adr/0031``.
-        """
+        """A model may ignore them, but it has to accept them. See ``docs/adr/0031``."""
         model.finetune(examples, classes)
         paths = [e.path for e in examples]
         outputs = model.predict(paths, None, features=[{} for _ in paths])
@@ -257,8 +208,6 @@ class ModelContract:
         restored = fresh
         restored.load(checkpoint)
 
-        # The whole point of a checkpoint: the same inputs give the same
-        # answers, in a fresh process that never saw the training data
         assert [o.values for o in restored.predict(paths)] == [o.values for o in before]
 
     def test_a_restored_model_keeps_its_classes(self, model, fresh, examples, classes, tmp_path):

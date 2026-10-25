@@ -17,11 +17,8 @@ from .data import ImageDataset, InferenceDataset, LetterboxSquash
 
 
 class MultiLabelClassifier(LabelModel):
-    """ConvNeXt V2 Base fine-tuned multi-label classifier.
-
-    Uses timm's ``convnextv2_base`` with ImageNet-22k pre-trained weights.
-    Supports multi-label outputs via ``BCEWithLogitsLoss``. The single-label
-    and presence variants override the task hooks below and share the rest.
+    """ConvNeXt V2 Base fine-tuned as a multi-label classifier; the variants override the task
+    hooks.
     """
 
     label_type = "classification"
@@ -45,7 +42,7 @@ class MultiLabelClassifier(LabelModel):
         self.classes: list[str] = []
         self._backbone: nn.Module | None = None
 
-    # -- the backbone, as methods so a test or a subclass can stand in a small one --
+    # -- the backbone --
 
     def _build_backbone(self, num_classes: int) -> nn.Module:
         return head.build_backbone(num_classes, self.device)
@@ -109,7 +106,7 @@ class MultiLabelClassifier(LabelModel):
         return transforms.Compose(steps)
 
     def _loader(self, dataset, *, batch_size: int, shuffle: bool, workers: int) -> DataLoader:
-        # num_workers > 0 hangs on macOS MPS; pin_memory is unsupported there too
+        # Workers hang and pin_memory is unsupported on MPS.
         on_mps = self.device.type == "mps"
         return DataLoader(
             dataset,
@@ -178,8 +175,7 @@ class MultiLabelClassifier(LabelModel):
             return []
         loader = self._loader(
             InferenceDataset(paths, self._transform(train=False), draft_size=self.IMG_SIZE),
-            # No gradients or optimizer state at inference: much larger batches
-            # fit, and JPEG decode needs more workers to keep the GPU fed
+            # Larger batches fit without gradients; decoding needs the workers to keep up.
             batch_size=self.batch_size * 4,
             shuffle=False,
             workers=min(12, os.cpu_count() or 4),
@@ -213,7 +209,6 @@ class MultiLabelClassifier(LabelModel):
     def load(self, path: Path) -> None:
         checkpoint = torch.load(path, weights_only=True, map_location=self.device)
         self.classes = checkpoint["classes"]
-        # The checkpoint's config is provenance only: hyperparameters belong
-        # to [model.params]. docs/adr/0005
+        # The checkpoint's config is provenance only. docs/adr/0005
         self._backbone = self._build_backbone(len(self.classes))
         self._backbone.load_state_dict(checkpoint["state_dict"])

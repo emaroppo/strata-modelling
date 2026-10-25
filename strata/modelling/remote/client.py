@@ -1,20 +1,19 @@
 """The modelling service's client: asking another host to run the round.
 
-What is sent is built from the host's own request models, the protocol is
-checked before anything is sent, a round is submitted and polled, and a
-failed question about a round is not a failed round. Standard library.
-See ``docs/adr/0007``.
+The protocol is checked before anything is sent; a round is submitted and polled. See
+``docs/adr/0007``.
 """
 
 import json
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
+from urllib.parse import quote
 
 from .wire import PROTOCOL, PROTOCOL_HEADER, GenerationRequest, PredictionRequest, RoundRequest
 
-#: The timeout for a call that names none. Every call names one, since a
-#: round is submitted and polled rather than held open (``docs/adr/0007``).
+#: The timeout for a call that names none; every call names one (``docs/adr/0007``).
 DEFAULT_TIMEOUT = 4 * 3600
 
 
@@ -23,10 +22,7 @@ class RemoteError(Exception):
 
 
 class Refused(RemoteError):
-    """The host answered, and its answer was no. Final; not retried.
-
-    See ``docs/adr/0007``.
-    """
+    """The host answered, and its answer was no. Final; not retried. See ``docs/adr/0007``."""
 
 
 class Unreachable(RemoteError):
@@ -44,18 +40,13 @@ class Trainer:
         self._health: dict = {}
 
     def served_catalog(self) -> dict:
-        """Which catalog that host trains from: ``{name, id}``, as it says itself.
-
-        From the same answer the protocol check reads, so asking costs
-        nothing once anything else has been asked.
-        """
+        """Which catalog that host trains from: ``{name, id}``, from the handshake's answer."""
         self._handshake()
         return self._health.get("catalog") or {}
 
     def _handshake(self) -> None:
-        """Refuse a host on another protocol, before asking it anything.
-
-        Once per client. See ``docs/adr/0007``.
+        """Refuse a host on another protocol before asking it anything; once per client. See
+        ``docs/adr/0007``.
         """
         if self._spoken:
             return
@@ -109,17 +100,14 @@ class Trainer:
         return self._call("/round", request.model_dump(mode="json"), timeout=60)
 
     def predict(self, request: PredictionRequest) -> dict:
-        """Ask for scores. Returns the job; the work runs after this returns.
-
-        Checksums rather than paths. See ``docs/adr/0007``.
+        """Ask for scores, by checksum. Returns the job; the work runs after this returns. See
+        ``docs/adr/0007``.
         """
         return self._call("/predict", request.model_dump(mode="json"), timeout=120)
 
     def generate(self, request: GenerationRequest) -> dict:
-        """Ask for outputs. Returns the job; the work runs after this returns.
-
-        Samples by checksum rather than path, as for :meth:`predict`. See
-        ``docs/adr/0054``.
+        """Ask for outputs, samples by checksum. Returns the job; the work runs after this returns.
+        See ``docs/adr/0054``.
         """
         return self._call("/generate", request.model_dump(mode="json"), timeout=120)
 
@@ -133,12 +121,9 @@ class Trainer:
             raise
 
     def latest_run(self, dataset: str, catalog_id: str | None = None) -> dict | None:
-        """The newest run there, or None. Its numbering, not this machine's.
-
-        Scoped to a catalog when one is given. See ``docs/adr/0008``.
+        """The newest run there, or None, scoped to a catalog when given. Its numbering, not this
+        machine's. See ``docs/adr/0008``.
         """
-        from urllib.parse import quote
-
         query = f"dataset={quote(dataset)}"
         if catalog_id is not None:
             query += f"&catalog={quote(catalog_id)}"
@@ -153,11 +138,15 @@ class Trainer:
         """How a round is getting on."""
         return self._call(f"/jobs/{job_id}", timeout=30)
 
-    def follow(self, job_id: str, on_state=None, interval: float = 3.0, sleep=None) -> dict:
-        """Poll until the round finishes, tolerating a network that does not.
-
-        A question that fails to arrive is retried; what ends this loop is
-        the host answering. See ``docs/adr/0007``.
+    def follow(
+        self,
+        job_id: str,
+        on_state: Callable[[dict], None] | None = None,
+        interval: float = 3.0,
+        sleep=None,
+    ) -> dict:
+        """Poll until the host answers that the round finished; an unreachable host is retried. See
+        ``docs/adr/0007``.
         """
         sleep = sleep or time.sleep
         unreachable = 0
